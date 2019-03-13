@@ -10,53 +10,78 @@
 #define LEFT_MOTOR_STEP_PIN 4
 #define LEFT_MOTOR_DIR_PIN 2
 
+#define RIGHT_MOTOR_STEP_PIN 8
+#define RIGHT_MOTOR_DIR_PIN 7
+
 #define ENCODER_FULL_SCALE 1024
 
 #define STALL_SPEED_DIFF_THRESHOLD 50
 
-#define STEP_FREQ_HZ 50000
+#define CLOCK_SPEED_HZ 16000000
 
 unsigned long timestamp;
 
+// timer counter for left and right motors
 volatile int32_t left_motor_counter;
+volatile int32_t right_motor_counter;
+
+// timer for main loop
 volatile int32_t loop_counter;
-bool main_loop_triggered;
+
+// timer ticks per motor step
 int32_t left_motor_nticks;
+int32_t right_motor_nticks;
 
 // motor's step velocity in full-steps per second
 int32_t left_motor_desired_vel;
 int32_t left_motor_actual_step_vel;
+int32_t right_motor_desired_vel;
+int32_t right_motor_actual_step_vel;
 
 // motor's encoder velocity in full-steps per second
 float left_motor_encoder_vel;
+float right_motor_encoder_vel;
 
+// previous angle read by encoder
 int16_t left_motor_prev_angle;
+int16_t right_motor_prev_angle;
+
+int32_t ctr;
 
 void setup_timers()
 {
     cli();
-  
-    // initialize Timer1
+
+    // initialize Timer0 for controlling right stepper motor
+    TCCR0A = 0;    // set entire TCCR0A register to 0
+    TCCR0B = 0;    // set entire TCCR0B register to 0 
+                   // (as we do not know the initial  values)
+
+    TIMSK0 |= (1 << OCIE0A);
+
+    TCCR0B |= _BV(CS01);
+    OCR0A = 255;
+    TCCR0A |= _BV(WGM01);
+
+    // initialize Timer1 for main loop
     TCCR1A = 0;    // set entire TCCR1A register to 0
     TCCR1B = 0;    // set entire TCCR1B register to 0 
                    // (as we do not know the initial  values)
 
     TIMSK1 |= (1 << OCIE1A);
 
-    // no prescaler by default
-    TCCR1B |= _BV(CS10) | _BV(WGM12) | _BV(WGM13);
-    ICR1 = 65535;
+    // set CTC mode and set prescaler to 8
+    TCCR1B |= _BV(CS11) | _BV(WGM12) | _BV(WGM13);
+    ICR1 = 39;
 
-    // initialize Timer2
+    // initialize Timer2 for controlling left stepper motor
     TCCR2A = 0;    // set entire TCCR2A register to 0
     TCCR2B = 0;    // set entire TCCR2B register to 0 
                    // (as we do not know the initial  values)
 
     TIMSK2 |= (1 << OCIE2A);
-
-    // no prescaler by default
     TCCR2B |= _BV(CS21);
-    OCR2A = 39;
+    OCR2A = 255;
     TCCR2A |= _BV(WGM21);
     
     // enable global interrupts:
@@ -65,16 +90,20 @@ void setup_timers()
 
 ISR(TIMER1_COMPA_vect)
 {
-    // called every compare-match
-    digitalWrite(LEFT_MOTOR_STEP_PIN, left_motor_counter >= (left_motor_nticks - 1));
-    left_motor_counter = (left_motor_counter >= (left_motor_nticks - 1)) ? 0 : left_motor_counter + 1;
-
+    loop_counter = (loop_counter >= LOOP_COUNTER_DIVISOR) ? 0 : loop_counter + 1;
 }
 
 ISR(TIMER2_COMPA_vect)
 {
-    // called every 20 us
-    loop_counter = (loop_counter >= LOOP_COUNTER_DIVISOR) ? 0 : loop_counter + 1;
+    // called every compare-match
+    digitalWrite(LEFT_MOTOR_STEP_PIN, left_motor_counter >= (left_motor_nticks - 1));
+    left_motor_counter = (left_motor_counter >= (left_motor_nticks - 1)) ? 0 : left_motor_counter + 1;
+}
+
+ISR(TIMER0_COMPA_vect)
+{
+    digitalWrite(RIGHT_MOTOR_STEP_PIN, right_motor_counter >= (right_motor_nticks - 1));
+    right_motor_counter = (right_motor_counter >= (right_motor_nticks - 1)) ? 0 : right_motor_counter + 1;
 }
 
 void setup()
@@ -83,24 +112,34 @@ void setup()
     
     Serial.begin(115200);
 
-    // STEP pin
+    // set up STEP and DIR pins
     pinMode(LEFT_MOTOR_STEP_PIN, OUTPUT);
     pinMode(LEFT_MOTOR_DIR_PIN, OUTPUT);
+    pinMode(RIGHT_MOTOR_STEP_PIN, OUTPUT);
+    pinMode(RIGHT_MOTOR_DIR_PIN, OUTPUT);
     digitalWrite(LEFT_MOTOR_STEP_PIN, LOW);
 
     // encoder
     pinMode(A0, INPUT);
 
+    loop_counter = 0;
+
+    // set up left motor
     left_motor_nticks = 0;
     left_motor_counter = 0;
     left_motor_desired_vel = 0;
     left_motor_actual_step_vel = 0;
-    loop_counter = 0;
-
     left_motor_encoder_vel = 0;
     left_motor_prev_angle = analogRead(A0);
 
-    main_loop_triggered = false;
+    // set up right motir
+    right_motor_nticks = 0;
+    right_motor_counter = 0;
+    right_motor_desired_vel = 0;
+    right_motor_actual_step_vel = 0;
+    right_motor_encoder_vel = 0;
+
+    ctr = 0;
 }
 
 void read_encoder_velocity()
@@ -130,64 +169,37 @@ void read_encoder_velocity()
     left_motor_prev_angle = new_angle;
 }
 
-void set_velocity(int32_t velocity)
+void set_velocity_left(float velocity)
 {
-    left_motor_desired_vel = velocity;
-    left_motor_nticks = STEP_FREQ_HZ / velocity;
-
-    // since the above nticks is a division of two integers we won't necessarily obtain the desired velocity but rather a value close to it.
-    left_motor_actual_step_vel = STEP_FREQ_HZ / left_motor_nticks;
+    if (velocity == 0)
+    {
+        OCR0A = 255;
+        left_motor_nticks = 1;
+        return;
+    }
+    // determine highest nticks such that OCR can be lower than 256
+    int32_t max_n_ticks = max(ceil((float)CLOCK_SPEED_HZ / (256 * 8 * velocity)), 2);
+    left_motor_nticks = max_n_ticks;
+    OCR2A = CLOCK_SPEED_HZ / (max_n_ticks * 8 * velocity) - 1;
 }
 
-void set_velocity2(int32_t velocity)
+void set_velocity_right(float velocity)
 {
-    if (velocity < 250)
+    if (velocity == 0)
     {
-        // in slow velocities 
-        // clock divisor - 64
-        TCCR1B |= _BV(CS11);
-        //ICR1 = 16000000 / max(64 * 2 * velocity, 256);
-        ICR1 = 20;
-        left_motor_nticks = 16000000 / (64 * velocity * ICR1);
+        OCR0A = 255;
+        right_motor_nticks = 1;
+        return;
     }
-    else
-    {
-        left_motor_nticks = 2;
-        // clock divisor - 1
-        TCCR1B &= ~_BV(CS11);
-        ICR1 = max(16000000 / (2 * velocity), 511);
-    }
-}
-
-void handle_stall()
-{
-    set_velocity(left_motor_encoder_vel);
+    
+    // determine highest nticks such that OCR can be lower than 256
+    int32_t max_n_ticks = max(ceil((float)CLOCK_SPEED_HZ / (256 * 8 * velocity)), 2);
+    right_motor_nticks = max_n_ticks;
+    OCR0A = CLOCK_SPEED_HZ / (max_n_ticks * 8 * velocity) - 1;
 }
 
 void loop()
 {
-    if (!main_loop_triggered && (loop_counter == 0))
-    {
-        main_loop_triggered = true;
-
-        //digitalWrite(DIR_PIN, HIGH);
-        set_velocity2(min(millis() / 5, 13000));       
-        read_encoder_velocity();
-        Serial.println(left_motor_encoder_vel);
-
-        /*if (abs(motor_actual_step_vel - motor_encoder_vel)) 
-        {
-            handle_stall();
-        }
-        else
-        {
-            set_velocity(1000);
-        }
-        
-        Serial.println(motor_encoder_vel);*/
-    }
-    else if (loop_counter != 0)
-    {
-        main_loop_triggered = false;
-    }
+    // busy-wait until next iteration for a 250Hz loop rate
+    while(loop_counter < LOOP_COUNTER_DIVISOR);
 }
