@@ -1,5 +1,14 @@
+
 #include <Arduino.h>
-#include <SPI.h>
+
+#define LEFT_MOTOR 0
+#define RIGHT_MOTOR 1
+
+#define STEP_MODE_FULL 1
+#define STEP_MODE_HALF 2
+#define STEP_MODE_QUARTER 4
+#define STEP_MODE_EIGHTH 8
+#define STEP_MODE_ONE_SIXTEENTH 16
 
 #define DIGITAL_POT_WRITE_CMD 0x00
 #define LOOP_COUNTER_DIVISOR 200
@@ -9,9 +18,15 @@
 
 #define LEFT_MOTOR_STEP_PIN 4
 #define LEFT_MOTOR_DIR_PIN 2
+#define LEFT_MOTOR_MS1_PIN 6
+#define LEFT_MOTOR_MS2_PIN 5
+#define LEFT_MOTOR_MS3_PIN 3
 
 #define RIGHT_MOTOR_STEP_PIN 8
 #define RIGHT_MOTOR_DIR_PIN 7
+#define RIGHT_MOTOR_MS1_PIN 11
+#define RIGHT_MOTOR_MS2_PIN 12
+#define RIGHT_MOTOR_MS3_PIN 10
 
 #define ENCODER_FULL_SCALE 1024
 
@@ -115,9 +130,15 @@ void setup()
     // set up STEP and DIR pins
     pinMode(LEFT_MOTOR_STEP_PIN, OUTPUT);
     pinMode(LEFT_MOTOR_DIR_PIN, OUTPUT);
+    pinMode(LEFT_MOTOR_MS2_PIN, OUTPUT);
     pinMode(RIGHT_MOTOR_STEP_PIN, OUTPUT);
     pinMode(RIGHT_MOTOR_DIR_PIN, OUTPUT);
+    pinMode(RIGHT_MOTOR_MS2_PIN, OUTPUT);
+    
     digitalWrite(LEFT_MOTOR_STEP_PIN, LOW);
+    digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
+    digitalWrite(RIGHT_MOTOR_STEP_PIN, LOW);
+    digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
 
     // encoder
     pinMode(A0, INPUT);
@@ -169,7 +190,82 @@ void read_encoder_velocity()
     left_motor_prev_angle = new_angle;
 }
 
-void set_velocity_left(float velocity)
+// set the velocity of a motor with a specific step_mode (full step or microstepping)
+void set_velocity(uint8_t motor, float velocity, uint8_t step_mode)
+{
+    if (motor == LEFT_MOTOR)
+    {
+        if (step_mode == STEP_MODE_FULL)
+        {
+            digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_HALF)
+        {
+            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_QUARTER)
+        {
+            digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_EIGHTH)
+        {
+            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_ONE_SIXTEENTH)
+        {
+            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
+        }
+        
+        set_step_rate_left(velocity * step_mode);
+    }
+    if (motor == RIGHT_MOTOR)
+    {
+        if (step_mode == STEP_MODE_FULL)
+        {
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_HALF)
+        {
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_QUARTER)
+        {
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_EIGHTH)
+        {
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_ONE_SIXTEENTH)
+        {
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
+        }
+        
+        set_step_rate_right(velocity * step_mode);
+    }
+}
+
+void set_step_rate_left(float velocity)
 {
     if (velocity == 0)
     {
@@ -183,8 +279,9 @@ void set_velocity_left(float velocity)
     OCR2A = CLOCK_SPEED_HZ / (max_n_ticks * 8 * velocity) - 1;
 }
 
-void set_velocity_right(float velocity)
+void set_step_rate_right(float velocity)
 {
+
     if (velocity == 0)
     {
         OCR0A = 255;
@@ -201,5 +298,11 @@ void set_velocity_right(float velocity)
 void loop()
 {
     // busy-wait until next iteration for a 250Hz loop rate
+    set_velocity(LEFT_MOTOR, min(ctr, 200), STEP_MODE_ONE_SIXTEENTH);
+    set_velocity(RIGHT_MOTOR, min(ctr, 200), STEP_MODE_ONE_SIXTEENTH);
+    //Serial.println(ctr);
+    //if ((ctr % 2000) > 1000) set_velocity(LEFT_MOTOR, 200, STEP_MODE_FULL);
+    //else set_velocity(LEFT_MOTOR, 200, STEP_MODE_QUARTER);
+    ctr += 5;
     while(loop_counter < LOOP_COUNTER_DIVISOR);
 }
