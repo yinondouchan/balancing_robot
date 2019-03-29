@@ -32,6 +32,8 @@ extern float cf_angle_x;
 extern float cf_angle_y;
 extern float cf_angle_z;
 
+extern float gyro_angle_x;
+
 // init the IMU
 void imu_init(MPU_9250 *imu);
 
@@ -43,6 +45,8 @@ void imu_calibrate_gyro(MPU_9250 *imu);
 
 // init
 void compl_filter_init();
+
+float get_angle_from_accelerometer();
 
 // read gyro and accelerometer, apply complementary filter
 // return angle and angular velocities in millideg and millideg/sec respectively

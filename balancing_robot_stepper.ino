@@ -53,6 +53,30 @@ MPU_9250 imu;
 
 unsigned long timestamp;
 
+typedef struct
+{
+    float angle_pid_p;
+    float angle_pid_ang_vel_p;
+    float vel_pid_p;
+    float vel_pid_i;
+    float vel_pid_d;
+    float vel_lpf_tc;
+    int32_t balance_vel_limit;
+    float vel_pid_d2;
+} parameters_t;
+
+// remote parameter tuning tags
+enum parameter_tlv_tag {
+                        ANGLE_PID_P,                // inner PID loop angle proportional component
+                        ANGLE_PID_ANG_VEL_P,        // inner PID loop angular velocity proportional component
+                        VEL_PID_P,                  // outer PID loop velocity proportional
+                        VEL_PID_I,                  // outer PID loop velocity integral
+                        VEL_PID_D,                  // outer PID loop velocity derivative
+                        VEL_LPF_TC,                 // velocity low-pass filter time constant [microseconds]
+                        BALANCE_VEL_LIMIT,          // balancing algorithm velocity limit [full-steps per second]
+                        VEL_PID_D2,
+                        };
+
 // timer counter for left and right motors
 volatile int32_t left_motor_counter;
 volatile int32_t right_motor_counter;
@@ -80,11 +104,13 @@ const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER,
 
 int32_t ctr;
 
-float balance_point_power, prev_vel, bp_i;
+float balance_point_power, prev_vel_lpf, prev_vel, bp_i;
 float vel_lpf;
 
 bool upright;
 bool main_loop_triggered;
+
+parameters_t parameters;
 
 void setup_timers()
 {
@@ -308,36 +334,39 @@ void set_step_rate_right(float velocity)
 void balance_point_control(int32_t desired_vel, int32_t desired_ang_vel, int32_t dt_micros)
 {
     // get angle, angular velocity and velocity from IMU and encoders
-    float angle = cf_angle_x;
+    float angle = gyro_angle_x;
     float ang_vel = imu_data.gyro[0];
     int32_t vel = desired_vel - (right_motor_vel + left_motor_vel)/2;
 
-    bp_i += 0.00000015 * vel * dt_micros;
-    vel_lpf = 300000.0 / (300000.0 + dt_micros) * vel_lpf + dt_micros / (300000.0 + dt_micros) * vel;
+    bp_i += parameters.vel_pid_i * vel * dt_micros;
+    vel_lpf = parameters.vel_lpf_tc / (parameters.vel_lpf_tc + dt_micros) * vel_lpf + dt_micros / (parameters.vel_lpf_tc + dt_micros) * vel;
     
-    int32_t angle_offset = 0.02 * vel + bp_i + 30000.0 * (vel_lpf - prev_vel) / dt_micros;
+    int32_t angle_offset = parameters.vel_pid_p * vel + bp_i + parameters.vel_pid_d * (vel_lpf - prev_vel_lpf) / dt_micros;
 
     // angle control
-    float power_gain = 0.08 * ang_vel + 0.15 * (angle - BALANCE_ANGLE - angle_offset);// - 0.005 * vel; // - (50.0  / dt_micros) * (vel - prev_vel);
+    float power_gain = parameters.angle_pid_ang_vel_p * ang_vel + parameters.angle_pid_p * (angle - BALANCE_ANGLE - angle_offset);// - 0.005 * vel; // - (50.0  / dt_micros) * (vel - prev_vel);
     // add to power the tilt-angle element and the I element of the speed
     balance_point_power += power_gain * dt_micros / 1000;
-    balance_point_power = constrain(balance_point_power, -3000, 3000);
+    balance_point_power = constrain(balance_point_power, -parameters.balance_vel_limit, parameters.balance_vel_limit);
 
-    float power = balance_point_power;// + (200000.0  / dt_micros) * (vel_lpf - prev_vel);
+    float power = balance_point_power + (parameters.vel_pid_d2  / dt_micros) * (vel_lpf - prev_vel_lpf);
+    power = constrain(power, -parameters.balance_vel_limit, parameters.balance_vel_limit); 
     
     // control motor velocities
     set_velocity(LEFT_MOTOR, power + desired_ang_vel, STEP_MODE_AUTO);
     set_velocity(RIGHT_MOTOR, power - desired_ang_vel, STEP_MODE_AUTO);
 
-    prev_vel = vel_lpf;
+    prev_vel = vel;
+    prev_vel_lpf = vel_lpf;
 }
 
 void reset_motors()
 {
     bp_i = 0;
     vel_lpf = 0;
-    
+
     prev_vel = 0;
+    prev_vel_lpf = 0;
     //prev_angle = 0;
     balance_point_power = 0;
 
@@ -345,8 +374,53 @@ void reset_motors()
     left_motor_vel = 0;
 }
 
+void set_default_parameters()
+{
+    parameters.angle_pid_p = 0.15;
+    parameters.angle_pid_ang_vel_p = 0.08;
+    parameters.vel_pid_p = 0.015;
+    parameters.vel_pid_i = 0.00000002;
+    parameters.vel_pid_d = 11000.0;
+    parameters.vel_lpf_tc = 300000.0;
+    parameters.balance_vel_limit = 6000;
+    parameters.vel_pid_d2 = 100000.0;
+}
+
+void set_parameter(uint8_t tag, uint8_t len, uint8_t *value)
+{
+    // remote parameter tuning tags
+    switch(tag)
+    {
+        case ANGLE_PID_P:
+        parameters.angle_pid_p = *(float*)value;
+        break;
+        case ANGLE_PID_ANG_VEL_P:
+        parameters.angle_pid_ang_vel_p = *(float*)value;
+        break;
+        case VEL_PID_P:
+        parameters.vel_pid_p = *(float*)value;
+        break;
+        case VEL_PID_I:
+        parameters.vel_pid_i = *(float*)value;
+        break;
+        case VEL_PID_D:
+        parameters.vel_pid_d = *(float*)value;
+        break;
+        case VEL_LPF_TC:
+        parameters.vel_lpf_tc = *(float*)value;
+        break;
+        case BALANCE_VEL_LIMIT:
+        parameters.balance_vel_limit = *(int32_t*)value;
+        break;
+        case VEL_PID_D2:
+        parameters.vel_pid_d2 = *(float*)value;
+        break;
+    }
+}
+
 void setup()
 {
+    set_default_parameters();
     setup_timers();
     
     Serial.begin(115200);
@@ -366,10 +440,18 @@ void setup()
 
     // init imu
     imu_init(&imu);
+
+    // calibrate gyro
+    Serial.println("Calibrating gyro");
+    imu_calibrate_gyro(&imu);
+    Serial.println("Done calibrating gyro");
+
+    // init complementary filter
     compl_filter_init();
 
     // init bluetooth
     bt_init();
+    bt_set_param_callback(set_parameter);
 
     // encoder
     pinMode(A0, INPUT);
@@ -391,7 +473,7 @@ void setup()
 
     // balancing algorithm
     balance_point_power = 0;
-    prev_vel = 0;
+    prev_vel_lpf = 0;
     bp_i = 0;
     vel_lpf;
 
@@ -401,11 +483,6 @@ void setup()
 
     // is the robot upright?
     upright = true;
-
-    // calibrate gyro
-    Serial.println("Calibrating gyro");
-    imu_calibrate_gyro(&imu);
-    Serial.println("Done calibrating gyro");
 }
 
 void loop()
@@ -414,12 +491,13 @@ void loop()
     if (!main_loop_triggered && (loop_counter == 0))
     {
         main_loop_triggered = true;
+        
         // read accel and gyro values
-        //set_velocity(LEFT_MOTOR, ctr, STEP_MODE_AUTO);
-        //set_velocity(RIGHT_MOTOR, 10000, STEP_MODE_FULL);
         read_accel_and_gyro(&imu);
         compl_filter_read(DT_MICROS);
-    
+        
+        bt_read();
+        
         if ((cf_angle_x < -60) || (cf_angle_x > 60)) upright = false;
         if (!upright)
         {
@@ -427,13 +505,14 @@ void loop()
             set_velocity(LEFT_MOTOR, 0, STEP_MODE_QUARTER);
             set_velocity(RIGHT_MOTOR, 0, STEP_MODE_QUARTER);
             upright = (cf_angle_x > ((int32_t)BALANCE_ANGLE - 10)) && (cf_angle_x < ((int32_t)BALANCE_ANGLE + 10));
+            if (upright) gyro_angle_x = cf_angle_x;
             reset_motors();
-            while(loop_counter < LOOP_COUNTER_DIVISOR);
             return;
         }
 
-        bt_read_joystick_control();
-        balance_point_control(bt_desired_vel, -bt_desired_vel_diff, DT_MICROS); 
+        // filter angular velocity control to avoid those annoying discrete level sounds
+        bt_desired_vel_diff_lpf = 0.1 * bt_desired_vel_diff + 0.9 * bt_desired_vel_diff_lpf;
+        balance_point_control(bt_desired_vel, -bt_desired_vel_diff_lpf, DT_MICROS);
     }
     else if (loop_counter != 0)
     {
