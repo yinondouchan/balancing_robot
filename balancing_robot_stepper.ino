@@ -8,6 +8,7 @@ extern "C"
 #include <mpu9250.h>
 #include "imu.h"
 #include "bluetooth.h"
+#include "config.h"
 
 #define LEFT_MOTOR 0
 #define RIGHT_MOTOR 1
@@ -20,6 +21,7 @@ extern "C"
 #define STEP_MODE_QUARTER 4
 #define STEP_MODE_EIGHTH 8
 #define STEP_MODE_SIXTEENTH 16
+#define STEP_MODE_THIRTY_TWOTH 32
 #define STEP_MODE_AUTO 0
 
 #define DIGITAL_POT_WRITE_CMD 0x00
@@ -32,13 +34,15 @@ extern "C"
 #define LEFT_MOTOR_DIR_PIN 2
 #define LEFT_MOTOR_MS1_PIN 6
 #define LEFT_MOTOR_MS2_PIN 5
-#define LEFT_MOTOR_MS3_PIN 3
+#define LEFT_MOTOR_MS3_PIN 9
+#define LEFT_MOTOR_I1_PIN 9
 
 #define RIGHT_MOTOR_STEP_PIN 8
 #define RIGHT_MOTOR_DIR_PIN 7
 #define RIGHT_MOTOR_MS1_PIN 11
 #define RIGHT_MOTOR_MS2_PIN 12
 #define RIGHT_MOTOR_MS3_PIN 10
+#define RIGHT_MOTOR_I1_PIN 10
 
 #define ENCODER_FULL_SCALE 1024
 
@@ -47,6 +51,8 @@ extern "C"
 #define CLOCK_SPEED_HZ 16000000
 
 #define BALANCE_ANGLE -2.5
+
+#define PWM_VOLTAGE 5
 
 // IMU
 MPU_9250 imu;
@@ -63,6 +69,7 @@ typedef struct
     float vel_lpf_tc;
     int32_t balance_vel_limit;
     float vel_pid_d2;
+    float current_limit;
 } parameters_t;
 
 // remote parameter tuning tags
@@ -75,6 +82,7 @@ enum parameter_tlv_tag {
                         VEL_LPF_TC,                 // velocity low-pass filter time constant [microseconds]
                         BALANCE_VEL_LIMIT,          // balancing algorithm velocity limit [full-steps per second]
                         VEL_PID_D2,
+                        CURRENT_LIMIT,
                         };
 
 // timer counter for left and right motors
@@ -100,7 +108,13 @@ float right_motor_encoder_vel;
 int16_t left_motor_prev_angle;
 int16_t right_motor_prev_angle;
 
+#if MOTOR_DRIVER == MOTOR_DRIVER_A4988
 const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER, STEP_MODE_EIGHTH, STEP_MODE_SIXTEENTH};
+#elif MOTOR_DRIVER == MOTOR_DRIVER_MP6500
+const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER, STEP_MODE_EIGHTH};
+#elif MOTOR_DRIVER == MOTOR_DRIVER_TB67S249
+const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER, STEP_MODE_EIGHTH, STEP_MODE_SIXTEENTH, STEP_MODE_THIRTY_TWOTH};
+#endif
 
 int32_t ctr;
 
@@ -127,16 +141,16 @@ void setup_timers()
     OCR0A = 255;
     TCCR0A |= _BV(WGM01);
 
-    // initialize Timer1 for main loop
+    // initialize Timer1 for main loop - a 1000 Hz interrup rate
     TCCR1A = 0;    // set entire TCCR1A register to 0
     TCCR1B = 0;    // set entire TCCR1B register to 0 
                    // (as we do not know the initial  values)
 
     TIMSK1 |= (1 << OCIE1A);
+    ICR1 = 1999;
 
     // set CTC mode and set prescaler to 8
-    TCCR1B |= _BV(CS11) | _BV(WGM12) | _BV(WGM13);
-    ICR1 = 1999;
+    TCCR1B |= _BV(CS11) | _BV(WGM13) | _BV(WGM12);
 
     // initialize Timer2 for controlling left stepper motor
     TCCR2A = 0;    // set entire TCCR2A register to 0
@@ -213,6 +227,11 @@ uint8_t get_auto_step_mode(float velocity)
 // set the velocity of a motor with a specific step_mode (full step or microstepping)
 void set_velocity(uint8_t motor, float velocity, uint8_t step_mode)
 {
+    uint8_t dir_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_DIR_PIN : RIGHT_MOTOR_DIR_PIN;
+    uint8_t ms1_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_MS1_PIN : RIGHT_MOTOR_MS1_PIN;
+    uint8_t ms2_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_MS2_PIN : RIGHT_MOTOR_MS2_PIN;
+    uint8_t ms3_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_MS3_PIN : RIGHT_MOTOR_MS3_PIN;
+    
     if (motor == LEFT_MOTOR)
     {
         // write direction
@@ -227,31 +246,21 @@ void set_velocity(uint8_t motor, float velocity, uint8_t step_mode)
         {
             digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
             digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_HALF)
         {
             digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
             digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_QUARTER)
         {
             digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
             digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_EIGHTH)
         {
             digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
             digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
-        }
-        else if (step_mode == STEP_MODE_SIXTEENTH)
-        {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
         }
         
         set_step_rate_left(velocity * step_mode);
@@ -270,31 +279,21 @@ void set_velocity(uint8_t motor, float velocity, uint8_t step_mode)
         {
             digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
             digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_HALF)
         {
             digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
             digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_QUARTER)
         {
             digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
             digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_EIGHTH)
         {
             digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
             digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
-        }
-        else if (step_mode == STEP_MODE_SIXTEENTH)
-        {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
         }
         
         set_step_rate_right(velocity * step_mode);
@@ -329,6 +328,15 @@ void set_step_rate_right(float velocity)
     int32_t max_n_ticks = max(ceil((float)CLOCK_SPEED_HZ / (256 * 8 * velocity)), 2);
     right_motor_nticks = max_n_ticks;
     OCR0A = CLOCK_SPEED_HZ / (max_n_ticks * 8 * velocity) - 1;
+}
+
+void set_current_limit(uint8_t motor, float amps)
+{
+    amps = constrain(amps, 0.0, 2.2);
+    float analog_voltage = (2.2 - amps) / 0.63;
+    uint16_t pwm_value = analog_voltage * 255 / PWM_VOLTAGE;
+
+    analogWrite((motor == LEFT_MOTOR) ? LEFT_MOTOR_I1_PIN : RIGHT_MOTOR_I1_PIN, pwm_value);
 }
 
 void balance_point_control(int32_t desired_vel, int32_t desired_ang_vel, int32_t dt_micros)
@@ -383,7 +391,7 @@ void set_default_parameters()
     parameters.vel_pid_d = 11000.0;
     parameters.vel_lpf_tc = 300000.0;
     parameters.balance_vel_limit = 6000;
-    parameters.vel_pid_d2 = 100000.0;
+    parameters.vel_pid_d2 = 200000.0;
 }
 
 void set_parameter(uint8_t tag, uint8_t len, uint8_t *value)
@@ -415,6 +423,10 @@ void set_parameter(uint8_t tag, uint8_t len, uint8_t *value)
         case VEL_PID_D2:
         parameters.vel_pid_d2 = *(float*)value;
         break;
+        case CURRENT_LIMIT:
+        set_current_limit(LEFT_MOTOR, *(float*)value);
+        set_current_limit(RIGHT_MOTOR, *(float*)value);
+        break;
     }
 }
 
@@ -423,7 +435,7 @@ void setup()
     set_default_parameters();
     setup_timers();
     
-    Serial.begin(115200);
+    Serial.begin(9600);
 
     // set up STEP and DIR pins
     pinMode(LEFT_MOTOR_STEP_PIN, OUTPUT);
@@ -437,6 +449,11 @@ void setup()
     digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
     digitalWrite(RIGHT_MOTOR_STEP_PIN, LOW);
     digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
+
+    pinMode(LEFT_MOTOR_I1_PIN, INPUT);
+    pinMode(RIGHT_MOTOR_I1_PIN, INPUT);
+    //set_current_limit(LEFT_MOTOR, 1.5);
+    //set_current_limit(RIGHT_MOTOR, 1.5);
 
     // init imu
     imu_init(&imu);
@@ -490,6 +507,11 @@ void loop()
     // 250Hz loop rate
     if (!main_loop_triggered && (loop_counter == 0))
     {
+      
+        //set_current_limit(LEFT_MOTOR, 2);
+        //set_current_limit(RIGHT_MOTOR, 2);
+        //set_velocity(LEFT_MOTOR, min(ctr, 2000), STEP_MODE_AUTO);
+        ctr++;
         main_loop_triggered = true;
         
         // read accel and gyro values
