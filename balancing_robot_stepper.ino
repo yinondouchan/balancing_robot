@@ -25,7 +25,7 @@ extern "C"
 #define STEP_MODE_AUTO 0
 
 #define DIGITAL_POT_WRITE_CMD 0x00
-#define LOOP_COUNTER_DIVISOR 4
+#define LOOP_COUNTER_DIVISOR 39
 
 #define DT_MICROS 4000
 #define FULL_STEPS_PER_REV 200
@@ -141,16 +141,16 @@ void setup_timers()
     OCR0A = 255;
     TCCR0A |= _BV(WGM01);
 
-    // initialize Timer1 for main loop - a 1000 Hz interrup rate
+    // initialize Timer1 for main loop - a 7812.5 Hz interrupt rate
     TCCR1A = 0;    // set entire TCCR1A register to 0
     TCCR1B = 0;    // set entire TCCR1B register to 0 
                    // (as we do not know the initial  values)
 
-    TIMSK1 |= (1 << OCIE1A);
-    ICR1 = 1999;
+    TIMSK1 |= (1 << TOIE1);
 
-    // set CTC mode and set prescaler to 8
-    TCCR1B |= _BV(CS11) | _BV(WGM13) | _BV(WGM12);
+    // set fast PWM mode and set prescaler to 8
+    TCCR1A += _BV(WGM10);
+    TCCR1B |= _BV(CS11) | _BV(WGM12);
 
     // initialize Timer2 for controlling left stepper motor
     TCCR2A = 0;    // set entire TCCR2A register to 0
@@ -166,7 +166,7 @@ void setup_timers()
     sei();
 }
 
-ISR(TIMER1_COMPA_vect)
+ISR(TIMER1_OVF_vect)
 {
     loop_counter = (loop_counter >= LOOP_COUNTER_DIVISOR) ? 0 : loop_counter + 1;
 }
@@ -386,7 +386,7 @@ void set_default_parameters()
 {
     parameters.angle_pid_p = 0.15;
     parameters.angle_pid_ang_vel_p = 0.08;
-    parameters.vel_pid_p = 0.015;
+    parameters.vel_pid_p = 0.010;
     parameters.vel_pid_i = 0.00000002;
     parameters.vel_pid_d = 11000.0;
     parameters.vel_lpf_tc = 300000.0;
@@ -450,10 +450,8 @@ void setup()
     digitalWrite(RIGHT_MOTOR_STEP_PIN, LOW);
     digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
 
-    pinMode(LEFT_MOTOR_I1_PIN, INPUT);
-    pinMode(RIGHT_MOTOR_I1_PIN, INPUT);
-    //set_current_limit(LEFT_MOTOR, 1.5);
-    //set_current_limit(RIGHT_MOTOR, 1.5);
+    set_current_limit(LEFT_MOTOR, 1.5);
+    set_current_limit(RIGHT_MOTOR, 1.5);
 
     // init imu
     imu_init(&imu);
@@ -511,7 +509,7 @@ void loop()
         //set_current_limit(LEFT_MOTOR, 2);
         //set_current_limit(RIGHT_MOTOR, 2);
         //set_velocity(LEFT_MOTOR, min(ctr, 2000), STEP_MODE_AUTO);
-        ctr++;
+        //ctr++;
         main_loop_triggered = true;
         
         // read accel and gyro values
