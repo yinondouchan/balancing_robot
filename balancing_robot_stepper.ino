@@ -27,7 +27,9 @@ extern "C"
 #define DIGITAL_POT_WRITE_CMD 0x00
 #define LOOP_COUNTER_DIVISOR 39
 
-#define DT_MICROS 4000
+#define DT_MICROS 5000
+#define DT_SECONDS 0.005
+
 #define FULL_STEPS_PER_REV 200
 
 #define LEFT_MOTOR_STEP_PIN 4
@@ -53,6 +55,13 @@ extern "C"
 #define BALANCE_ANGLE -2.5
 
 #define PWM_VOLTAGE 5
+
+#define SIGN(x) (((x) > 0) - ((x) < 0))
+
+// maximum acceleration in full steps per second
+#define MAX_ACCEL 1000
+#define MAX_DECCEL 1500
+
 
 // IMU
 MPU_9250 imu;
@@ -123,6 +132,8 @@ float vel_lpf;
 
 bool upright;
 bool main_loop_triggered;
+
+float bt_desired_vel_constrained;
 
 parameters_t parameters;
 
@@ -384,12 +395,12 @@ void reset_motors()
 
 void set_default_parameters()
 {
-    parameters.angle_pid_p = 0.15;
-    parameters.angle_pid_ang_vel_p = 0.08;
-    parameters.vel_pid_p = 0.010;
-    parameters.vel_pid_i = 0.00000002;
-    parameters.vel_pid_d = 11000.0;
-    parameters.vel_lpf_tc = 300000.0;
+    parameters.angle_pid_p = 0.12;
+    parameters.angle_pid_ang_vel_p = 0.064;
+    parameters.vel_pid_p = 0.015;
+    parameters.vel_pid_i = 0.000000025;
+    parameters.vel_pid_d = 15000.0;
+    parameters.vel_lpf_tc = 240000.0;
     parameters.balance_vel_limit = 6000;
     parameters.vel_pid_d2 = 200000.0;
 }
@@ -494,6 +505,8 @@ void setup()
 
     ctr = 0;
 
+    bt_desired_vel_constrained = 0;
+
     main_loop_triggered = false;
 
     // is the robot upright?
@@ -505,13 +518,8 @@ void loop()
     // 250Hz loop rate
     if (!main_loop_triggered && (loop_counter == 0))
     {
-      
-        //set_current_limit(LEFT_MOTOR, 2);
-        //set_current_limit(RIGHT_MOTOR, 2);
-        //set_velocity(LEFT_MOTOR, min(ctr, 2000), STEP_MODE_AUTO);
-        //ctr++;
         main_loop_triggered = true;
-        
+
         // read accel and gyro values
         read_accel_and_gyro(&imu);
         compl_filter_read(DT_MICROS);
@@ -526,13 +534,22 @@ void loop()
             set_velocity(RIGHT_MOTOR, 0, STEP_MODE_QUARTER);
             upright = (cf_angle_x > ((int32_t)BALANCE_ANGLE - 10)) && (cf_angle_x < ((int32_t)BALANCE_ANGLE + 10));
             if (upright) gyro_angle_x = cf_angle_x;
+            bt_desired_vel_constrained = 0;
             reset_motors();
             return;
         }
 
         // filter angular velocity control to avoid those annoying discrete level sounds
+        float vel_diff = bt_desired_vel - bt_desired_vel_constrained;
+        int8_t vel_sign = SIGN(vel_diff);
+        bool accel = abs(bt_desired_vel) > abs(bt_desired_vel_constrained);
+        float vel_dt = accel ? vel_sign * MAX_ACCEL * DT_SECONDS : vel_sign * MAX_DECCEL * DT_SECONDS;
+
+        if (abs(vel_dt) < abs(vel_diff)) bt_desired_vel_constrained += vel_dt;
+        else bt_desired_vel_constrained = bt_desired_vel;
+        
         bt_desired_vel_diff_lpf = 0.1 * bt_desired_vel_diff + 0.9 * bt_desired_vel_diff_lpf;
-        balance_point_control(bt_desired_vel, -bt_desired_vel_diff_lpf, DT_MICROS);
+        balance_point_control(bt_desired_vel_constrained, -bt_desired_vel_diff_lpf, DT_MICROS);
     }
     else if (loop_counter != 0)
     {

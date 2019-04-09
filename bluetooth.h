@@ -15,7 +15,7 @@
 #define JOYSTICK_VEL_SENSITIVITY 1
 
 // angular velocity sensitivity per unit
-#define JOYSTICK_ANG_VEL_SENSITIVITY 3
+#define JOYSTICK_ANG_VEL_SENSITIVITY 2
 
 #define TRIM_INCREMENT_MILLIDEG 300
 
