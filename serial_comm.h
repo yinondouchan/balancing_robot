@@ -19,7 +19,13 @@
 // angular velocity sensitivity per velocity command unit
 #define JOYSTICK_ANG_VEL_SENSITIVITY 2.2
 
+// attenuation factor for turn rate. Lowers turn rate the higher the desired velocity is. The formula for turn rate is turn_rate / attenuation_factor
 #define TURN_RATE_ATTENUATION_FACTOR 1500
+
+// TLV command indices
+#define PARAM_CMD_TLV_TAG_INDEX 1
+#define PARAM_CMD_TLV_LENGTH_INDEX 2
+#define PARAM_CMD_TLV_VALUE_INDEX 3
 
 // emergency stop callback
 typedef void(*estop_callback_t)();
@@ -61,8 +67,5 @@ void serial_comm_set_estop_callback(estop_callback_t func);
 
 // set callback for updating a parameter
 void serial_comm_set_param_callback(param_callback_t func);
-
-// decode a parameter
-void serial_comm_decode_param(const char *param_name, const uint8_t len);
 
 #endif // SERIAL_COMM_H

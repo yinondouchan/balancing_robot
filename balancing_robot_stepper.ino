@@ -7,7 +7,7 @@ extern "C"
 
 #include <mpu9250.h>
 #include "imu.h"
-#include "bluetooth.h"
+#include "serial_comm.h"
 #include "config.h"
 
 #define LEFT_MOTOR 0
@@ -140,7 +140,7 @@ bool upright;
 bool on_estop;
 bool main_loop_triggered;
 
-float bt_desired_vel_constrained;
+float serial_comm_desired_vel_constrained;
 
 bool on_stall;
 
@@ -594,9 +594,9 @@ void setup()
     compl_filter_init();
 
     // init bluetooth
-    bt_init();
-    bt_set_param_callback(set_parameter);
-    bt_set_estop_callback(toggle_estop);
+    serial_comm_init();
+    serial_comm_set_param_callback(set_parameter);
+    serial_comm_set_estop_callback(toggle_estop);
 
     // encoder
     pinMode(A0, INPUT);
@@ -629,7 +629,7 @@ void setup()
 
     ctr = 0;
 
-    bt_desired_vel_constrained = 0;
+    serial_comm_desired_vel_constrained = 0;
 
     main_loop_triggered = false;
 
@@ -653,14 +653,8 @@ void loop()
         // read encoders
         read_encoder_velocity(LEFT_MOTOR);
         read_encoder_velocity(RIGHT_MOTOR);
-
-        /*set_velocity(RIGHT_MOTOR, min(ctr, 1000), STEP_MODE_QUARTER);
-
-        if ((right_motor_encoder_vel > 1100) || (right_motor_encoder_vel < 900)) Serial.println(right_motor_encoder_vel);
-        ctr++;
-        return;*/
         
-        bt_read();
+        serial_comm_read();
 
         
         if ((cf_angle_x < -55) || (cf_angle_x > 55)) upright = false;
@@ -670,22 +664,22 @@ void loop()
             disable_motors();
             upright = (cf_angle_x > ((int32_t)BALANCE_ANGLE - 10)) && (cf_angle_x < ((int32_t)BALANCE_ANGLE + 10));
             if (upright) gyro_angle_x = cf_angle_x;
-            bt_desired_vel_constrained = 0;
+            serial_comm_desired_vel_constrained = 0;
             reset_motors();
             return;
         }
 
         // filter angular velocity control to avoid those annoying discrete level sounds
-        float vel_diff = bt_desired_vel - bt_desired_vel_constrained;
+        float vel_diff = serial_comm_desired_vel - serial_comm_desired_vel_constrained;
         int8_t vel_sign = SIGN(vel_diff);
-        bool accel = abs(bt_desired_vel) > abs(bt_desired_vel_constrained);
+        bool accel = abs(serial_comm_desired_vel) > abs(serial_comm_desired_vel_constrained);
         float vel_dt = accel ? vel_sign * MAX_ACCEL * DT_SECONDS : vel_sign * MAX_DECCEL * DT_SECONDS;
 
-        if (abs(vel_dt) < abs(vel_diff)) bt_desired_vel_constrained += vel_dt;
-        else bt_desired_vel_constrained = bt_desired_vel;
+        if (abs(vel_dt) < abs(vel_diff)) serial_comm_desired_vel_constrained += vel_dt;
+        else serial_comm_desired_vel_constrained = serial_comm_desired_vel;
         
-        bt_desired_vel_diff_lpf = 0.1 * bt_desired_vel_diff + 0.9 * bt_desired_vel_diff_lpf;
-        balance_control(bt_desired_vel_constrained, -bt_desired_vel_diff_lpf, DT_MICROS);
+        serial_comm_desired_vel_diff_lpf = 0.1 * serial_comm_desired_vel_diff + 0.9 * serial_comm_desired_vel_diff_lpf;
+        balance_control(serial_comm_desired_vel_constrained, - serial_comm_desired_vel_diff_lpf, DT_MICROS);
     }
     else if (loop_counter != 0)
     {
