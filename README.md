@@ -1,6 +1,10 @@
 # balancing_robot
 A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
+## Body
+
+The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed. I will publish schematics and STL files.
+
 ## Components
 
 ### Motors
@@ -9,6 +13,14 @@ A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
 ### Motor control
 * 2x TB67S249FTG stepper motor drivers: https://www.pololu.com/product/3096
+
+### Wheels
+* Alternative A:
+  * 2x Pololu 90mm wheels: https://www.pololu.com/product/1438
+  * 2x Pololu universal mounting hubs for 5mm shaft and M3 screws: https://www.pololu.com/product/1998
+* Alternative B (Using some of the components in alternative A):
+  * 2x 5mm hex couplers: https://www.aliexpress.com/item/32959682575.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
+  * 3d print a plastic wheel compatible to the above hex coupler and mount the tires of the aforementioned Pololu 90mm wheels on them. This is what I did and I will send the STL file for those wheels.
 
 ### Microcontrollers and computers
 * 1x Fake Arduino Nano board: https://www.aliexpress.com/item/32607801066.html?spm=a2g0s.9042311.0.0.27424c4dqhugXl
