@@ -12,12 +12,14 @@
 #define MAX_BUF_SIZE 14
 
 // velocity sensitivity per unit
-#define JOYSTICK_VEL_SENSITIVITY 1
+#define JOYSTICK_VEL_SENSITIVITY 2
 
 // angular velocity sensitivity per unit
-#define JOYSTICK_ANG_VEL_SENSITIVITY 2
+#define JOYSTICK_ANG_VEL_SENSITIVITY 2.2
 
 #define TRIM_INCREMENT_MILLIDEG 300
+
+#define TURN_RATE_ATTENUATION_FACTOR 1500
 
 // trimming of balance angle (i.e. manual fine tuning)
 typedef void(*trim_callback_t)(int);

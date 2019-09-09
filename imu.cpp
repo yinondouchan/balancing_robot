@@ -1,26 +1,24 @@
 #include <math.h>
-
 #include "imu.h"
 
-#define CF_CONST 0.98
+// complementary filter constant
+#define CF_CONST 0.999
+
+// number of averaging samples for gyro calibration
 #define GYRO_CALIBRATION_NSAMPLES 200
 
-bool read_once;
-long last_timestamp;
-
+// hold IMU data and raw data
 imu_data_t imu_data;
 imu_raw_data_t imu_raw_data;
 
-// gyro and accel full scale ranges
+// gyro and accel full scale ranges as init in the IMU
 uint16_t gyro_full_scale;
 uint8_t accel_full_scale;
 
+// gyro biases in x, y and z axes
 float gyro_bias_x, gyro_bias_y, gyro_bias_z;
 
-int32_t accel_angle_x;
-int32_t accel_angle_y;
-int32_t accel_angle_z;
-
+// x, y and z angles as derived from the complementary filter
 float cf_angle_x;
 float cf_angle_y;
 float cf_angle_z;
@@ -96,11 +94,8 @@ void compl_filter_init()
 {   
     cf_angle_x = get_angle_from_accelerometer();
     gyro_angle_x = cf_angle_x;
-    accel_lpf_x = 0;
     cf_angle_y = 0;
     cf_angle_z = 0;
-    
-    read_once = false;
 }
 
 float get_angle_from_accelerometer()
@@ -112,13 +107,8 @@ void compl_filter_read(int32_t dt_micros)
 {   
     // calculate accel angle
     float angle_float_x = get_angle_from_accelerometer();
-    //accel_lpf_x = 100000.0 / (100000.0 + dt_micros) * accel_lpf_x + dt_micros / (100000.0 + dt_micros) * angle_float_x;
     //float angle_float_y = atan2(-imu->a_raw.z, imu->a_raw.x) * 180 / M_PI;
     //float angle_float_z = atan2(-imu->a_raw.y, imu->a_raw.x) * 180 / M_PI;
-
-    //accel_angle_x = angle_float_x * 1000;
-    //accel_angle_y = angle_float_y * 1000;
-    //accel_angle_z = angle_float_z * 1000;
     
     // apply complementary filter 300 us
     gyro_angle_x += imu_data.gyro[0]*dt_micros / 1000000;

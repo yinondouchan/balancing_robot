@@ -169,7 +169,8 @@ void bt_decode_joystick_control_packet()
     bt_desired_vel = (x_reading - 512) * bt_joystick_vel_sensitivity;
 
     // add some low-pass filtering to angular velocity
-    bt_desired_vel_diff = (y_reading - 512) * JOYSTICK_ANG_VEL_SENSITIVITY;
+    float turn_rate_attenuation = (1.0 + float(abs(bt_desired_vel)) / TURN_RATE_ATTENUATION_FACTOR); // make the robot's turn less sharp the faster it goes
+    bt_desired_vel_diff = (y_reading - 512) * JOYSTICK_ANG_VEL_SENSITIVITY / turn_rate_attenuation;
 }
 
 void add_to_trim_angle(int increment)

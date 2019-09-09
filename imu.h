@@ -1,5 +1,5 @@
-#ifndef COMPL_FILTER_H
-#define COMPL_FILTER_H
+#ifndef IMU_H
+#define IMU_H
 
 extern "C"
 {
@@ -8,12 +8,14 @@ extern "C"
 
 #include <mpu9250.h>
 
+// IMU data in units of g for acceleration and degrees per second (dps) for the gyroscope
 typedef struct
 {
     float accel[3];
     float gyro[3];
 } imu_data_t;
 
+// raw IMU data from -32768 to 32767
 typedef struct
 {
     short accel[3];
@@ -27,11 +29,12 @@ extern imu_raw_data_t imu_raw_data;
 // gyroscope biases
 extern float gyro_bias_x, gyro_bias_y, gyro_bias_z;
 
-// output angles 
+// x, y and z angles as derived from the complementary filter
 extern float cf_angle_x;
 extern float cf_angle_y;
 extern float cf_angle_z;
 
+// angular velocity around the x axis
 extern float gyro_angle_x;
 
 // init the IMU
@@ -43,13 +46,14 @@ void read_accel_and_gyro(MPU_9250 *imu);
 // find the measurement biases of the gyroscope by averaging over samples
 void imu_calibrate_gyro(MPU_9250 *imu);
 
-// init
+// init complementary filter
 void compl_filter_init();
 
+// get angle from the accelerometer only (fast response, but noisy)
 float get_angle_from_accelerometer();
 
 // read gyro and accelerometer, apply complementary filter
-// return angle and angular velocities in millideg and millideg/sec respectively
+// return angle and angular velocities in deg and deg/sec respectively
 void compl_filter_read(int32_t dt_micros);
 
-#endif // COMPL_FILTER
+#endif // IMU_H

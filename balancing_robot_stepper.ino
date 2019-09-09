@@ -38,6 +38,7 @@ extern "C"
 #define LEFT_MOTOR_MS2_PIN 5
 #define LEFT_MOTOR_MS3_PIN 9
 #define LEFT_MOTOR_I1_PIN 9
+#define LEFT_MOTOR_ENCODER_PIN A1
 
 #define RIGHT_MOTOR_STEP_PIN 8
 #define RIGHT_MOTOR_DIR_PIN 7
@@ -45,10 +46,12 @@ extern "C"
 #define RIGHT_MOTOR_MS2_PIN 12
 #define RIGHT_MOTOR_MS3_PIN 10
 #define RIGHT_MOTOR_I1_PIN 10
+#define RIGHT_MOTOR_ENCODER_PIN A0
 
 #define ENCODER_FULL_SCALE 1024
 
-#define STALL_SPEED_DIFF_THRESHOLD 50
+#define STALL_SPEED_DIFF_THRESHOLD 200
+#define STALL_ACCEL_SPEED 100
 
 #define CLOCK_SPEED_HZ 16000000
 
@@ -59,8 +62,11 @@ extern "C"
 #define SIGN(x) (((x) > 0) - ((x) < 0))
 
 // maximum acceleration in full steps per second
-#define MAX_ACCEL 1000
-#define MAX_DECCEL 1500
+#define MAX_ACCEL 2000
+#define MAX_DECCEL 2000
+
+// AS5600 encoders sometimes have an anomaly 
+#define ANOMALOUS_ACCELERATION_THRESHOLD
 
 
 // IMU
@@ -125,15 +131,18 @@ const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER,
 const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER, STEP_MODE_EIGHTH, STEP_MODE_SIXTEENTH, STEP_MODE_THIRTY_TWOTH};
 #endif
 
-int32_t ctr;
+volatile int32_t ctr, ctr2;
 
 float balance_point_power, prev_vel_lpf, prev_vel, bp_i;
 float vel_lpf;
 
 bool upright;
+bool on_estop;
 bool main_loop_triggered;
 
 float bt_desired_vel_constrained;
+
+bool on_stall;
 
 parameters_t parameters;
 
@@ -180,6 +189,7 @@ void setup_timers()
 ISR(TIMER1_OVF_vect)
 {
     loop_counter = (loop_counter >= LOOP_COUNTER_DIVISOR) ? 0 : loop_counter + 1;
+    //ctr++;
 }
 
 ISR(TIMER2_COMPA_vect)
@@ -193,33 +203,6 @@ ISR(TIMER0_COMPA_vect)
 {
     digitalWrite(RIGHT_MOTOR_STEP_PIN, right_motor_counter >= (right_motor_nticks - 1));
     right_motor_counter = (right_motor_counter >= (right_motor_nticks - 1)) ? 0 : right_motor_counter + 1;
-}
-
-void read_encoder_velocity()
-{
-    int16_t new_angle = analogRead(A0);
-
-    // calculate encoder angle difference
-    int16_t left_encoder_angle_diff = (new_angle - left_motor_prev_angle);
-
-    // deal with angle overflow, i.e. transition from ENCODER_FULL_SCALE - 1 to 0 or backwards
-    if (abs(left_encoder_angle_diff) > ENCODER_FULL_SCALE/2)
-    {
-        // angle_diff should be positive
-        if (new_angle < left_motor_prev_angle) left_encoder_angle_diff += ENCODER_FULL_SCALE;
-        // angle_diff should be negative
-        else left_encoder_angle_diff -= ENCODER_FULL_SCALE;
-    }
-
-    // find velocity in encoder step per second
-    float new_motor_encoder_vel = 1000000.0 * (float)left_encoder_angle_diff / DT_MICROS;
-    // convert to full-steps per second
-    new_motor_encoder_vel = new_motor_encoder_vel * FULL_STEPS_PER_REV / ENCODER_FULL_SCALE;
-
-    // add a low-pass filter
-    left_motor_encoder_vel = 0.9 * left_motor_encoder_vel + 0.1 * new_motor_encoder_vel;
-    
-    left_motor_prev_angle = new_angle;
 }
 
 uint8_t get_auto_step_mode(float velocity)
@@ -257,21 +240,37 @@ void set_velocity(uint8_t motor, float velocity, uint8_t step_mode)
         {
             digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
             digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
         }
         else if (step_mode == STEP_MODE_HALF)
         {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_QUARTER)
         {
             digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
             digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
         }
         else if (step_mode == STEP_MODE_EIGHTH)
         {
             digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
+        }
+        else if (step_mode == STEP_MODE_SIXTEENTH)
+        {
+            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
             digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_THIRTY_TWOTH)
+        {
+            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
         }
         
         set_step_rate_left(velocity * step_mode);
@@ -290,24 +289,110 @@ void set_velocity(uint8_t motor, float velocity, uint8_t step_mode)
         {
             digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
             digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
         }
         else if (step_mode == STEP_MODE_HALF)
         {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
         }
         else if (step_mode == STEP_MODE_QUARTER)
         {
             digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
             digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
         }
         else if (step_mode == STEP_MODE_EIGHTH)
         {
             digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
+        }
+        else if (step_mode == STEP_MODE_SIXTEENTH)
+        {
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
             digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
+        }
+        else if (step_mode == STEP_MODE_THIRTY_TWOTH)
+        {
+            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
+            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
         }
         
         set_step_rate_right(velocity * step_mode);
+    }
+}
+
+void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode)
+{
+    float actual_vel_error = (motor == LEFT_MOTOR) ? (left_motor_vel - left_motor_encoder_vel) : (right_motor_vel - right_motor_encoder_vel);
+
+    on_stall = abs(actual_vel_error) >= STALL_SPEED_DIFF_THRESHOLD;
+
+    if (on_stall)
+    {        
+        if (motor == LEFT_MOTOR) left_motor_vel = left_motor_encoder_vel;
+        else right_motor_vel = right_motor_encoder_vel;
+    }
+    else
+    {
+        float desired_vel_diff = velocity - ((motor == LEFT_MOTOR) ? left_motor_vel : right_motor_vel);
+        //float desired_vel_diff = velocity - left_motor_vel;
+        int sign = (desired_vel_diff > 0) - (desired_vel_diff < 0);
+
+        if (abs(desired_vel_diff) <= STALL_ACCEL_SPEED)
+        {
+            if (motor == LEFT_MOTOR) left_motor_vel = velocity;
+            else right_motor_vel = velocity;
+        }
+        else
+        {
+            if (motor == LEFT_MOTOR) left_motor_vel += STALL_ACCEL_SPEED * sign;
+            else right_motor_vel += STALL_ACCEL_SPEED * sign;
+        }
+        
+        set_velocity(motor, motor == (LEFT_MOTOR) ? left_motor_vel : right_motor_vel, step_mode);
+    }
+}
+
+void read_encoder_velocity(uint8_t motor)
+{
+    int16_t new_angle = analogRead((motor == LEFT_MOTOR) ? LEFT_MOTOR_ENCODER_PIN : RIGHT_MOTOR_ENCODER_PIN);
+
+    // calculate encoder angle difference
+    float prev_angle = (motor == LEFT_MOTOR) ? left_motor_prev_angle: right_motor_prev_angle;
+    int16_t encoder_angle_diff = (new_angle - prev_angle);
+
+    // deal with angle overflow, i.e. transition from ENCODER_FULL_SCALE - 1 to 0 or backwards
+    if (abs(encoder_angle_diff) > ENCODER_FULL_SCALE/2)
+    {
+        // angle_diff should be positive
+        if (new_angle < prev_angle) encoder_angle_diff += ENCODER_FULL_SCALE;
+        // angle_diff should be negative
+        else encoder_angle_diff -= ENCODER_FULL_SCALE;
+    }
+
+    // find velocity in encoder steps per second
+    float new_motor_encoder_vel = -1000000.0 * (float)encoder_angle_diff / DT_MICROS;
+    // convert to full-steps per second
+    new_motor_encoder_vel = new_motor_encoder_vel * FULL_STEPS_PER_REV / ENCODER_FULL_SCALE;
+
+    if (motor == LEFT_MOTOR)
+    {
+        // add a low-pass filter
+        left_motor_encoder_vel = 0.5 * left_motor_encoder_vel + 0.5 * -new_motor_encoder_vel;
+        
+        left_motor_prev_angle = new_angle;
+    }
+    else
+    {
+        // add a low-pass filter
+        right_motor_encoder_vel = 0.5 * right_motor_encoder_vel + 0.5 * new_motor_encoder_vel;
+        
+        right_motor_prev_angle = new_angle;
     }
 }
 
@@ -319,6 +404,7 @@ void set_step_rate_left(float velocity)
         left_motor_nticks = 1;
         return;
     }
+    
     // determine highest nticks such that OCR can be lower than 256
     int32_t max_n_ticks = max(ceil((float)CLOCK_SPEED_HZ / (256 * 8 * velocity)), 2);
     left_motor_nticks = max_n_ticks;
@@ -350,14 +436,33 @@ void set_current_limit(uint8_t motor, float amps)
     analogWrite((motor == LEFT_MOTOR) ? LEFT_MOTOR_I1_PIN : RIGHT_MOTOR_I1_PIN, pwm_value);
 }
 
-void balance_point_control(int32_t desired_vel, int32_t desired_ang_vel, int32_t dt_micros)
+void balance_control(int32_t desired_vel, int32_t desired_ang_vel, int32_t dt_micros)
 {
     // get angle, angular velocity and velocity from IMU and encoders
-    float angle = gyro_angle_x;
+    float angle = cf_angle_x;
     float ang_vel = imu_data.gyro[0];
-    int32_t vel = desired_vel - (right_motor_vel + left_motor_vel)/2;
+    float vel;
+    float left_vel, right_vel;
 
-    bp_i += parameters.vel_pid_i * vel * dt_micros;
+    if (on_stall)
+    {
+        vel = desired_vel - (right_motor_encoder_vel + left_motor_encoder_vel)/2;
+        left_vel = left_motor_encoder_vel;
+        right_vel = right_motor_encoder_vel;
+        balance_point_power = 0.9 * balance_point_power + 0.1 * (right_motor_encoder_vel + left_motor_encoder_vel)/2;
+    }
+    else
+    {
+        vel = desired_vel - (right_motor_vel + left_motor_vel)/2;
+        left_vel = left_motor_vel;
+        right_vel = right_motor_vel;
+    }
+
+    // only change I component when in stop in order to compensate for balance angle error
+    if ((desired_vel == 0) && (desired_ang_vel == 0))
+    {
+        bp_i += parameters.vel_pid_i * vel * dt_micros;
+    }
     vel_lpf = parameters.vel_lpf_tc / (parameters.vel_lpf_tc + dt_micros) * vel_lpf + dt_micros / (parameters.vel_lpf_tc + dt_micros) * vel;
     
     int32_t angle_offset = parameters.vel_pid_p * vel + bp_i + parameters.vel_pid_d * (vel_lpf - prev_vel_lpf) / dt_micros;
@@ -372,8 +477,8 @@ void balance_point_control(int32_t desired_vel, int32_t desired_ang_vel, int32_t
     power = constrain(power, -parameters.balance_vel_limit, parameters.balance_vel_limit); 
     
     // control motor velocities
-    set_velocity(LEFT_MOTOR, power + desired_ang_vel, STEP_MODE_AUTO);
-    set_velocity(RIGHT_MOTOR, power - desired_ang_vel, STEP_MODE_AUTO);
+    set_velocity_with_stall_detection(LEFT_MOTOR, power + desired_ang_vel, STEP_MODE_AUTO);
+    set_velocity_with_stall_detection(RIGHT_MOTOR, power - desired_ang_vel, STEP_MODE_AUTO);
 
     prev_vel = vel;
     prev_vel_lpf = vel_lpf;
@@ -396,11 +501,11 @@ void reset_motors()
 void set_default_parameters()
 {
     parameters.angle_pid_p = 0.12;
-    parameters.angle_pid_ang_vel_p = 0.064;
-    parameters.vel_pid_p = 0.015;
+    parameters.angle_pid_ang_vel_p = 0.06;
+    parameters.vel_pid_p = 0.012;
     parameters.vel_pid_i = 0.000000025;
     parameters.vel_pid_d = 15000.0;
-    parameters.vel_lpf_tc = 240000.0;
+    parameters.vel_lpf_tc = 300000.0;
     parameters.balance_vel_limit = 6000;
     parameters.vel_pid_d2 = 200000.0;
 }
@@ -441,6 +546,21 @@ void set_parameter(uint8_t tag, uint8_t len, uint8_t *value)
     }
 }
 
+void disable_motors()
+{
+    digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
+    digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
+    digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
+    digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
+    digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
+    digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
+}
+
+void toggle_estop()
+{
+    on_estop = !on_estop;
+}
+
 void setup()
 {
     set_default_parameters();
@@ -452,18 +572,16 @@ void setup()
     pinMode(LEFT_MOTOR_STEP_PIN, OUTPUT);
     pinMode(LEFT_MOTOR_DIR_PIN, OUTPUT);
     pinMode(LEFT_MOTOR_MS2_PIN, OUTPUT);
+    pinMode(LEFT_MOTOR_ENCODER_PIN, INPUT);
+    
     pinMode(RIGHT_MOTOR_STEP_PIN, OUTPUT);
     pinMode(RIGHT_MOTOR_DIR_PIN, OUTPUT);
     pinMode(RIGHT_MOTOR_MS2_PIN, OUTPUT);
+    pinMode(RIGHT_MOTOR_ENCODER_PIN, INPUT);
+
+    // start with motors disabled.
+    disable_motors();
     
-    digitalWrite(LEFT_MOTOR_STEP_PIN, LOW);
-    digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
-    digitalWrite(RIGHT_MOTOR_STEP_PIN, LOW);
-    digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
-
-    set_current_limit(LEFT_MOTOR, 1.5);
-    set_current_limit(RIGHT_MOTOR, 1.5);
-
     // init imu
     imu_init(&imu);
 
@@ -478,6 +596,7 @@ void setup()
     // init bluetooth
     bt_init();
     bt_set_param_callback(set_parameter);
+    bt_set_estop_callback(toggle_estop);
 
     // encoder
     pinMode(A0, INPUT);
@@ -503,6 +622,11 @@ void setup()
     bp_i = 0;
     vel_lpf;
 
+    // emergency stop
+    on_estop = false;
+
+    on_stall = false;
+
     ctr = 0;
 
     bt_desired_vel_constrained = 0;
@@ -515,23 +639,35 @@ void setup()
 
 void loop()
 {
-    // 250Hz loop rate
+    // 200Hz loop rate
     if (!main_loop_triggered && (loop_counter == 0))
     {
         main_loop_triggered = true;
-
+        
         // read accel and gyro values
+        //ctr2 = ctr;
         read_accel_and_gyro(&imu);
+        //Serial.println(ctr - ctr2);
         compl_filter_read(DT_MICROS);
+
+        // read encoders
+        read_encoder_velocity(LEFT_MOTOR);
+        read_encoder_velocity(RIGHT_MOTOR);
+
+        /*set_velocity(RIGHT_MOTOR, min(ctr, 1000), STEP_MODE_QUARTER);
+
+        if ((right_motor_encoder_vel > 1100) || (right_motor_encoder_vel < 900)) Serial.println(right_motor_encoder_vel);
+        ctr++;
+        return;*/
         
         bt_read();
+
         
-        if ((cf_angle_x < -60) || (cf_angle_x > 60)) upright = false;
-        if (!upright)
+        if ((cf_angle_x < -55) || (cf_angle_x > 55)) upright = false;
+        if (!upright || on_estop)
         {
             // control motor velocities
-            set_velocity(LEFT_MOTOR, 0, STEP_MODE_QUARTER);
-            set_velocity(RIGHT_MOTOR, 0, STEP_MODE_QUARTER);
+            disable_motors();
             upright = (cf_angle_x > ((int32_t)BALANCE_ANGLE - 10)) && (cf_angle_x < ((int32_t)BALANCE_ANGLE + 10));
             if (upright) gyro_angle_x = cf_angle_x;
             bt_desired_vel_constrained = 0;
@@ -549,7 +685,7 @@ void loop()
         else bt_desired_vel_constrained = bt_desired_vel;
         
         bt_desired_vel_diff_lpf = 0.1 * bt_desired_vel_diff + 0.9 * bt_desired_vel_diff_lpf;
-        balance_point_control(bt_desired_vel_constrained, -bt_desired_vel_diff_lpf, DT_MICROS);
+        balance_control(bt_desired_vel_constrained, -bt_desired_vel_diff_lpf, DT_MICROS);
     }
     else if (loop_counter != 0)
     {
