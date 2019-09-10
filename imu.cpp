@@ -2,6 +2,7 @@
 #include "imu.h"
 
 // complementary filter constant
+// currently set to a very high value due to the balancing algorithm being able to compensate on the gyro's bias
 #define CF_CONST 0.999
 
 // number of averaging samples for gyro calibration
