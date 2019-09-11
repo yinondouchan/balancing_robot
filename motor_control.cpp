@@ -1,7 +1,8 @@
 #include <Arduino.h>
 
 #include "motor_control.h"
-#include "config.h"
+#include "encoders.h"
+#include "parameters.h"
 
 // timer counter for left and right motors
 volatile int32_t left_motor_counter;
@@ -16,6 +17,9 @@ int32_t right_motor_nticks;
 // motor's step velocity in full-steps per second
 float motor_control_left_motor_vel;
 float motor_control_right_motor_vel;
+
+// true if one of the robot's motors are stalled
+bool motor_control_on_stall;
 
 // step modes for various stepper motor drivers
 #if MC_MOTOR_DRIVER == MOTOR_DRIVER_A4988
@@ -49,6 +53,16 @@ ISR(TIMER0_COMPA_vect)
 // initialize motor control module
 void motor_control_init()
 {
+    // set up STEP and DIR pins for left motor
+    pinMode(MC_LEFT_MOTOR_STEP_PIN, OUTPUT);
+    pinMode(MC_LEFT_MOTOR_DIR_PIN, OUTPUT);
+    pinMode(MC_LEFT_MOTOR_MS2_PIN, OUTPUT);
+
+    // set up STEP and DIR pins for right motor
+    pinMode(MC_RIGHT_MOTOR_STEP_PIN, OUTPUT);
+    pinMode(MC_RIGHT_MOTOR_DIR_PIN, OUTPUT);
+    pinMode(MC_RIGHT_MOTOR_MS2_PIN, OUTPUT);
+  
     // set up left motor
     left_motor_nticks = 0;
     left_motor_counter = 0;
@@ -58,6 +72,12 @@ void motor_control_init()
     right_motor_nticks = 0;
     right_motor_counter = 0;
     motor_control_right_motor_vel = 0;
+
+    // stall detection
+    motor_control_on_stall = false;
+
+    // start with motors disabled.
+    motor_control_disable_motors();
 }
 
 // set pulse rate for left motor driver
@@ -233,4 +253,57 @@ void motor_control_reset()
 {
     motor_control_right_motor_vel = 0;
     motor_control_left_motor_vel = 0;
+}
+
+// distable the motors
+void motor_control_disable_motors()
+{
+    // causes the motors to coast rather than brake
+    digitalWrite(MC_LEFT_MOTOR_MS1_PIN, LOW);
+    digitalWrite(MC_LEFT_MOTOR_MS2_PIN, LOW);
+    digitalWrite(MC_LEFT_MOTOR_MS3_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_MS1_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_MS2_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_MS3_PIN, LOW);
+}
+
+// control velocity with a stall detection layer built upon it
+void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode)
+{
+    // velocity difference in full steps between control velocity and encoder velocity
+    float actual_vel_error = (motor == MC_LEFT_MOTOR) ? (motor_control_left_motor_vel - encoders_left_motor_vel) : (motor_control_right_motor_vel - encoders_right_motor_vel);
+
+    // true if stall detected (velocity difference is higher than the defined threshold)
+    motor_control_on_stall = abs(actual_vel_error) >= MC_STALL_SPEED_DIFF_THRESHOLD;
+
+    if (motor_control_on_stall)
+    {        
+        // stall occured - immediately set control velocity to what the encoder read
+        if (motor == MC_LEFT_MOTOR) motor_control_left_motor_vel = encoders_left_motor_vel;
+        else motor_control_right_motor_vel = encoders_right_motor_vel;
+    }
+    else // no stall
+    {
+        // calculate difference between desired velocity and actual velocity
+        float desired_vel_diff = velocity - ((motor == MC_LEFT_MOTOR) ? motor_control_left_motor_vel : motor_control_right_motor_vel);
+
+        // sign of the above difference
+        int sign = (desired_vel_diff > 0) - (desired_vel_diff < 0);
+
+        if (abs(desired_vel_diff) <= MC_STALL_ACCEL_SPEED)
+        {
+            // when velocity difference is small enough equalize between desired difference and actual control difference
+            if (motor == MC_LEFT_MOTOR) motor_control_left_motor_vel = velocity;
+            else motor_control_right_motor_vel = velocity;
+        }
+        else
+        {
+            // when velocity difference is still big accelerate towards desired velocity
+            if (motor == MC_LEFT_MOTOR) motor_control_left_motor_vel += MC_STALL_ACCEL_SPEED * sign;
+            else motor_control_right_motor_vel += MC_STALL_ACCEL_SPEED * sign;
+        }
+
+        // set the velocity accordingly
+        motor_control_set_velocity(motor, motor == (MC_LEFT_MOTOR) ? motor_control_left_motor_vel : motor_control_right_motor_vel, step_mode);
+    }
 }

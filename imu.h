@@ -27,33 +27,33 @@ extern imu_data_t imu_data;
 extern imu_raw_data_t imu_raw_data;
 
 // gyroscope biases
-extern float gyro_bias_x, gyro_bias_y, gyro_bias_z;
+extern float imu_gyro_bias_x, imu_gyro_bias_y, imu_gyro_bias_z;
 
 // x, y and z angles as derived from the complementary filter
-extern float cf_angle_x;
-extern float cf_angle_y;
-extern float cf_angle_z;
+extern float imu_cf_angle_x;
+extern float imu_cf_angle_y;
+extern float imu_cf_angle_z;
 
 // angular velocity around the x axis
-extern float gyro_angle_x;
+extern float imu_gyro_angle_x;
 
 // init the IMU
 void imu_init(MPU_9250 *imu);
 
 // read accel and gyro data from IMU in units of g and degrees per second respectively
-void read_accel_and_gyro(MPU_9250 *imu);
+void imu_read_accel_and_gyro(MPU_9250 *imu);
 
 // find the measurement biases of the gyroscope by averaging over samples
 void imu_calibrate_gyro(MPU_9250 *imu);
 
 // init complementary filter
-void compl_filter_init();
+void imu_compl_filter_init();
 
 // get angle from the accelerometer only (fast response, but noisy)
-float get_angle_from_accelerometer();
+float imu_get_angle_from_accelerometer();
 
 // read gyro and accelerometer, apply complementary filter
 // return angle and angular velocities in deg and deg/sec respectively
-void compl_filter_read(int32_t dt_micros);
+void imu_compl_filter_read(int32_t dt_micros);
 
 #endif // IMU_H

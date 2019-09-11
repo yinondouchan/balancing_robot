@@ -39,8 +39,17 @@
 // clock prescaler for the timers responsible for the stepper motors (timer 0 and timer 2)
 #define MC_STEP_TIMER_CLOCK_PRESCALER 8
 
+// velocity difference threshold for triggering the stall detection and handling mechanism
+// threshold is in units of full-steps/sec between desired velocity and what the encoder reads
+#define MC_STALL_SPEED_DIFF_THRESHOLD 200
+
+// the amount of acceleration back to desired velocity given a stall
+#define MC_STALL_ACCEL_SPEED 100
+
 extern float motor_control_left_motor_vel;
 extern float motor_control_right_motor_vel;
+
+extern bool motor_control_on_stall;
 
 // initialize motor control module
 void motor_control_init();
@@ -59,5 +68,11 @@ uint8_t motor_control_get_auto_step_mode(float velocity);
 
 // reset motor control
 void motor_control_reset();
+
+// distable the motors
+void motor_control_disable_motors();
+
+// control velocity with a stall detection layer built upon it
+void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode);
 
 #endif // MOTOR_CONTROL_H
