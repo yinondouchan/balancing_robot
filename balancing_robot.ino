@@ -12,24 +12,8 @@ extern "C"
 #include <mpu9250.h>
 #include "imu.h"
 #include "serial_comm.h"
+#include "motor_control.h"
 #include "config.h"
-
-// motor index
-#define LEFT_MOTOR 0
-#define RIGHT_MOTOR 1
-
-// motor direction
-#define DIRECTION_FORWARD 0
-#define DIRECTION_BACKWARD 1
-
-// microstepping modes
-#define STEP_MODE_FULL 1
-#define STEP_MODE_HALF 2
-#define STEP_MODE_QUARTER 4
-#define STEP_MODE_EIGHTH 8
-#define STEP_MODE_SIXTEENTH 16
-#define STEP_MODE_THIRTY_TWOTH 32
-#define STEP_MODE_AUTO 0    // automatic microstepping selection
 
 // how many timer interrups to count until main loop is triggered
 #define LOOP_COUNTER_DIVISOR 40
@@ -40,32 +24,11 @@ extern "C"
 // main loop time interval in seconds
 #define DT_SECONDS 0.005
 
-// clock prescaler for the timers responsible for the stepper motors (timer 0 and timer 2)
-#define STEP_TIMER_CLOCK_PRESCALER 8
-
 // number of full steps per motor revolution
 #define FULL_STEPS_PER_REV 200
 
-// left motor step and direction pins
-#define LEFT_MOTOR_STEP_PIN 4
-#define LEFT_MOTOR_DIR_PIN 2
-
-// left motor microstepping pins. Actual microstepping values depend on the motor driver used
-#define LEFT_MOTOR_MS1_PIN 6
-#define LEFT_MOTOR_MS2_PIN 5
-#define LEFT_MOTOR_MS3_PIN 9
-
 // left motor encoder pin
 #define LEFT_MOTOR_ENCODER_PIN A1
-
-// right motor step and direction pins
-#define RIGHT_MOTOR_STEP_PIN 8
-#define RIGHT_MOTOR_DIR_PIN 7
-
-// right motor microstepping pins. Actual microstepping values depend on the motor driver used
-#define RIGHT_MOTOR_MS1_PIN 11
-#define RIGHT_MOTOR_MS2_PIN 12
-#define RIGHT_MOTOR_MS3_PIN 100
 
 // right motor encoder pin
 #define RIGHT_MOTOR_ENCODER_PIN A0
@@ -79,9 +42,6 @@ extern "C"
 
 // the amount of acceleration back to desired velocity given a stall
 #define STALL_ACCEL_SPEED 100
-
-// clock speed
-#define CLOCK_SPEED_HZ 16000000
 
 // the angle in degrees read from the IMU where it is assumed that the robot is perfectly balanced
 #define BALANCE_ANGLE -2.5
@@ -123,22 +83,8 @@ enum parameter_tlv_tag {
                         CURRENT_LIMIT,
                         };
 
-// timer counter for left and right motors
-volatile int32_t left_motor_counter;
-volatile int32_t right_motor_counter;
-
 // timer for main loop
 volatile int32_t loop_counter;
-
-// number of timer compare match interrupts per STEP pulse sent to left motor driver
-int32_t left_motor_nticks;
-
-// number of timer compare match interrupts per STEP pulse sent to right motor driver
-int32_t right_motor_nticks;
-
-// motor's step velocity in full-steps per second
-float left_motor_vel;
-float right_motor_vel;
 
 // motor's encoder velocity in full-steps per second
 float left_motor_encoder_vel;
@@ -147,15 +93,6 @@ float right_motor_encoder_vel;
 // previous angle read by encoder
 int16_t left_motor_prev_angle;
 int16_t right_motor_prev_angle;
-
-// step modes for various stepper motor drivers
-#if MOTOR_DRIVER == MOTOR_DRIVER_A4988
-const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER, STEP_MODE_EIGHTH, STEP_MODE_SIXTEENTH};
-#elif MOTOR_DRIVER == MOTOR_DRIVER_MP6500
-const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER, STEP_MODE_EIGHTH};
-#elif MOTOR_DRIVER == MOTOR_DRIVER_TB67S249
-const uint8_t step_modes[] = {STEP_MODE_FULL, STEP_MODE_HALF, STEP_MODE_QUARTER, STEP_MODE_EIGHTH, STEP_MODE_SIXTEENTH, STEP_MODE_THIRTY_TWOTH};
-#endif
 
 // output velocity to motor from balancing algorithm
 float balance_point_power;
@@ -250,158 +187,11 @@ ISR(TIMER1_OVF_vect)
     loop_counter = (loop_counter >= (LOOP_COUNTER_DIVISOR - 1)) ? 0 : loop_counter + 1;
 }
 
-ISR(TIMER2_COMPA_vect)
-{
-    // called every compare-match and controls pulse frequency
-    digitalWrite(LEFT_MOTOR_STEP_PIN, left_motor_counter >= (left_motor_nticks - 1));
-
-    // send pulse every nticks interrupts
-    left_motor_counter = (left_motor_counter >= (left_motor_nticks - 1)) ? 0 : left_motor_counter + 1;
-}
-
-ISR(TIMER0_COMPA_vect)
-{
-    // called every compare-match and controls pulse frequency
-    digitalWrite(RIGHT_MOTOR_STEP_PIN, right_motor_counter >= (right_motor_nticks - 1));
-
-    // send pulse every nticks interrupts
-    right_motor_counter = (right_motor_counter >= (right_motor_nticks - 1)) ? 0 : right_motor_counter + 1;
-}
-
-// automatic microstepping mode selection as a function of velocity
-uint8_t get_auto_step_mode(float velocity)
-{
-    // choose the finest microstepping mode where it will be possible to reach this velocity without a too high timer interrupt rate
-    uint8_t num_of_step_modes = sizeof(step_modes)/sizeof(step_modes[0]);
-    for (int i = (num_of_step_modes - 1); i >= 0; i--)
-    {
-        int32_t step_mode_nticks_value = CLOCK_SPEED_HZ / (velocity * STEP_TIMER_CLOCK_PRESCALER * step_modes[i] * 128);
-        if (step_mode_nticks_value >= 2) return step_modes[i];
-    }
-
-    return STEP_MODE_FULL;
-}
-
-// set the velocity of a motor with a specific step_mode (full step or microstepping)
-void set_velocity(uint8_t motor, float velocity, uint8_t step_mode)
-{
-    // determine the output pins for the right driver
-    uint8_t dir_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_DIR_PIN : RIGHT_MOTOR_DIR_PIN;
-    uint8_t ms1_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_MS1_PIN : RIGHT_MOTOR_MS1_PIN;
-    uint8_t ms2_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_MS2_PIN : RIGHT_MOTOR_MS2_PIN;
-    uint8_t ms3_pin = (motor == LEFT_MOTOR) ? LEFT_MOTOR_MS3_PIN : RIGHT_MOTOR_MS3_PIN;
-    
-    if (motor == LEFT_MOTOR)
-    {
-        // write direction
-        digitalWrite(LEFT_MOTOR_DIR_PIN, velocity < 0 ? DIRECTION_BACKWARD: DIRECTION_FORWARD);
-
-        // assume actual motor velocity equals to desired velocity
-        left_motor_vel = velocity;
-        velocity = abs(velocity);
-
-        // determine step mode
-        if (step_mode == STEP_MODE_AUTO) step_mode = get_auto_step_mode(velocity);
-        
-        // write stepping mode for left motor
-        if (step_mode == STEP_MODE_FULL)
-        {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
-        }
-        else if (step_mode == STEP_MODE_HALF)
-        {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
-        }
-        else if (step_mode == STEP_MODE_QUARTER)
-        {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
-        }
-        else if (step_mode == STEP_MODE_EIGHTH)
-        {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
-        }
-        else if (step_mode == STEP_MODE_SIXTEENTH)
-        {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
-        }
-        else if (step_mode == STEP_MODE_THIRTY_TWOTH)
-        {
-            digitalWrite(LEFT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(LEFT_MOTOR_MS3_PIN, HIGH);
-        }
-
-        // control step rate of left motor (microsteps per second)
-        set_step_rate_left(velocity * step_mode);
-    }
-    if (motor == RIGHT_MOTOR)
-    {
-        // write direction
-        digitalWrite(RIGHT_MOTOR_DIR_PIN, velocity < 0 ? DIRECTION_BACKWARD: DIRECTION_FORWARD);
-        right_motor_vel = velocity;
-        velocity = abs(velocity);
-
-        // determine step mode
-        if (step_mode == STEP_MODE_AUTO) step_mode = get_auto_step_mode(velocity);
-        
-        // write stepping mode
-        if (step_mode == STEP_MODE_FULL)
-        {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
-        }
-        else if (step_mode == STEP_MODE_HALF)
-        {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
-        }
-        else if (step_mode == STEP_MODE_QUARTER)
-        {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
-        }
-        else if (step_mode == STEP_MODE_EIGHTH)
-        {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
-        }
-        else if (step_mode == STEP_MODE_SIXTEENTH)
-        {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
-        }
-        else if (step_mode == STEP_MODE_THIRTY_TWOTH)
-        {
-            digitalWrite(RIGHT_MOTOR_MS1_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS2_PIN, HIGH);
-            digitalWrite(RIGHT_MOTOR_MS3_PIN, HIGH);
-        }
-
-        // control step rate of right motor (microsteps per second)
-        set_step_rate_right(velocity * step_mode);
-    }
-}
-
 // control velocity with a stall detection layer built upon it
 void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode)
 {
     // velocity difference in full steps between control velocity and encoder velocity
-    float actual_vel_error = (motor == LEFT_MOTOR) ? (left_motor_vel - left_motor_encoder_vel) : (right_motor_vel - right_motor_encoder_vel);
+    float actual_vel_error = (motor == MC_LEFT_MOTOR) ? (motor_control_left_motor_vel - left_motor_encoder_vel) : (motor_control_right_motor_vel - right_motor_encoder_vel);
 
     // true if stall detected (velocity difference is higher than the defined threshold)
     on_stall = abs(actual_vel_error) >= STALL_SPEED_DIFF_THRESHOLD;
@@ -409,13 +199,13 @@ void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t ste
     if (on_stall)
     {        
         // stall occured - immediately set control velocity to what the encoder read
-        if (motor == LEFT_MOTOR) left_motor_vel = left_motor_encoder_vel;
-        else right_motor_vel = right_motor_encoder_vel;
+        if (motor == MC_LEFT_MOTOR) motor_control_left_motor_vel = left_motor_encoder_vel;
+        else motor_control_right_motor_vel = right_motor_encoder_vel;
     }
     else // no stall
     {
         // calculate difference between desired velocity and actual velocity
-        float desired_vel_diff = velocity - ((motor == LEFT_MOTOR) ? left_motor_vel : right_motor_vel);
+        float desired_vel_diff = velocity - ((motor == MC_LEFT_MOTOR) ? motor_control_left_motor_vel : motor_control_right_motor_vel);
 
         // sign of the above difference
         int sign = (desired_vel_diff > 0) - (desired_vel_diff < 0);
@@ -423,18 +213,18 @@ void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t ste
         if (abs(desired_vel_diff) <= STALL_ACCEL_SPEED)
         {
             // when velocity difference is small enough equalize between desired difference and actual control difference
-            if (motor == LEFT_MOTOR) left_motor_vel = velocity;
-            else right_motor_vel = velocity;
+            if (motor == MC_LEFT_MOTOR) motor_control_left_motor_vel = velocity;
+            else motor_control_right_motor_vel = velocity;
         }
         else
         {
             // when velocity difference is still big accelerate towards desired velocity
-            if (motor == LEFT_MOTOR) left_motor_vel += STALL_ACCEL_SPEED * sign;
-            else right_motor_vel += STALL_ACCEL_SPEED * sign;
+            if (motor == MC_LEFT_MOTOR) motor_control_left_motor_vel += STALL_ACCEL_SPEED * sign;
+            else motor_control_right_motor_vel += STALL_ACCEL_SPEED * sign;
         }
 
         // set the velocity accordingly
-        set_velocity(motor, motor == (LEFT_MOTOR) ? left_motor_vel : right_motor_vel, step_mode);
+        motor_control_set_velocity(motor, motor == (MC_LEFT_MOTOR) ? motor_control_left_motor_vel : motor_control_right_motor_vel, step_mode);
     }
 }
 
@@ -442,10 +232,10 @@ void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t ste
 void read_encoder_velocity(uint8_t motor)
 {
     // read the angle
-    int16_t new_angle = analogRead((motor == LEFT_MOTOR) ? LEFT_MOTOR_ENCODER_PIN : RIGHT_MOTOR_ENCODER_PIN);
+    int16_t new_angle = analogRead((motor == MC_LEFT_MOTOR) ? LEFT_MOTOR_ENCODER_PIN : RIGHT_MOTOR_ENCODER_PIN);
 
     // calculate encoder angle difference
-    float prev_angle = (motor == LEFT_MOTOR) ? left_motor_prev_angle: right_motor_prev_angle;
+    float prev_angle = (motor == MC_LEFT_MOTOR) ? left_motor_prev_angle: right_motor_prev_angle;
     int16_t encoder_angle_diff = (new_angle - prev_angle);
 
     // deal with angle overflow, i.e. transition from ENCODER_FULL_SCALE - 1 to 0 or backwards
@@ -463,7 +253,7 @@ void read_encoder_velocity(uint8_t motor)
     // convert to full-steps per second
     new_motor_encoder_vel = new_motor_encoder_vel * FULL_STEPS_PER_REV / ENCODER_FULL_SCALE;
 
-    if (motor == LEFT_MOTOR)
+    if (motor == MC_LEFT_MOTOR)
     {
         // add a low-pass filter
         left_motor_encoder_vel = 0.5 * left_motor_encoder_vel + 0.5 * -new_motor_encoder_vel;
@@ -479,45 +269,6 @@ void read_encoder_velocity(uint8_t motor)
         // set previous angle value
         right_motor_prev_angle = new_angle;
     }
-}
-
-// set pulse rate for left motor driver
-void set_step_rate_left(float velocity)
-{
-    if (velocity == 0)
-    {
-        // if on standstill set timer so it will run on lowest interrupt rate
-        OCR0A = 255;
-        left_motor_nticks = 1;
-        return;
-    }
-    
-    // determine highest nticks (timer interrupts per step pulse) such that OCR can be of the highest value, yet lower than 256
-    int32_t max_n_ticks = max(ceil((float)CLOCK_SPEED_HZ / (256 * 8 * velocity)), 2);
-    left_motor_nticks = max_n_ticks;
-
-    // given the nticks calculate the OCR value
-    OCR2A = CLOCK_SPEED_HZ / (max_n_ticks * 8 * velocity) - 1;
-}
-
-// set pulse rate for right motor driver
-void set_step_rate_right(float velocity)
-{
-
-    if (velocity == 0)
-    {
-        // if on standstill set timer so it will run on lowest interrupt rate
-        OCR0A = 255;
-        right_motor_nticks = 1;
-        return;
-    }
-    
-    // determine highest nticks (timer interrupts per step pulse) such that OCR can be of the highest value, yet lower than 256
-    int32_t max_n_ticks = max(ceil((float)CLOCK_SPEED_HZ / (256 * 8 * velocity)), 2);
-    right_motor_nticks = max_n_ticks;
-
-    // given the nticks calculate the OCR value
-    OCR0A = CLOCK_SPEED_HZ / (max_n_ticks * 8 * velocity) - 1;
 }
 
 /* 
@@ -558,7 +309,7 @@ void balance_control(int32_t desired_vel, int32_t desired_turn_rate, int32_t dt_
     else
     {
         // no stall - rely on velocity sent to the drivers since it is not noisy as the encoders
-        vel_error = desired_vel - (right_motor_vel + left_motor_vel)/2;
+        vel_error = desired_vel - (motor_control_right_motor_vel + motor_control_left_motor_vel)/2;
     }
 
     if ((desired_vel == 0) && (desired_turn_rate == 0))
@@ -585,16 +336,16 @@ void balance_control(int32_t desired_vel, int32_t desired_turn_rate, int32_t dt_
     power = constrain(power, -parameters.balance_vel_limit, parameters.balance_vel_limit); 
     
     // control motor velocities with the obtained output and desired turn rate
-    set_velocity_with_stall_detection(LEFT_MOTOR, power + desired_turn_rate, STEP_MODE_AUTO);
-    set_velocity_with_stall_detection(RIGHT_MOTOR, power - desired_turn_rate, STEP_MODE_AUTO);
+    set_velocity_with_stall_detection(MC_LEFT_MOTOR, power + desired_turn_rate, MC_STEP_MODE_AUTO);
+    set_velocity_with_stall_detection(MC_RIGHT_MOTOR, power - desired_turn_rate, MC_STEP_MODE_AUTO);
 
     // store filtered and unfiltered velocity error values for next iteration
     prev_vel = vel_error;
     prev_vel_error_lpf = vel_error_lpf;
 }
 
-// reset the motors
-void reset_motors()
+// reset balance control
+void balance_control_reset()
 {
     bp_i = 0;
     vel_error_lpf = 0;
@@ -602,9 +353,6 @@ void reset_motors()
     prev_vel = 0;
     prev_vel_error_lpf = 0;
     balance_point_power = 0;
-
-    right_motor_vel = 0;
-    left_motor_vel = 0;
 }
 
 // set default tunable parameters
@@ -672,12 +420,12 @@ void set_parameter(uint8_t tag, uint8_t len, uint8_t *value)
 void disable_motors()
 {
     // causes the motors to coast rather than brake
-    digitalWrite(LEFT_MOTOR_MS1_PIN, LOW);
-    digitalWrite(LEFT_MOTOR_MS2_PIN, LOW);
-    digitalWrite(LEFT_MOTOR_MS3_PIN, LOW);
-    digitalWrite(RIGHT_MOTOR_MS1_PIN, LOW);
-    digitalWrite(RIGHT_MOTOR_MS2_PIN, LOW);
-    digitalWrite(RIGHT_MOTOR_MS3_PIN, LOW);
+    digitalWrite(MC_LEFT_MOTOR_MS1_PIN, LOW);
+    digitalWrite(MC_LEFT_MOTOR_MS2_PIN, LOW);
+    digitalWrite(MC_LEFT_MOTOR_MS3_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_MS1_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_MS2_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_MS3_PIN, LOW);
 }
 
 // toggle emergency stop
@@ -719,15 +467,15 @@ void setup()
     Serial.begin(9600);
 
     // set up STEP and DIR pins for left motor
-    pinMode(LEFT_MOTOR_STEP_PIN, OUTPUT);
-    pinMode(LEFT_MOTOR_DIR_PIN, OUTPUT);
-    pinMode(LEFT_MOTOR_MS2_PIN, OUTPUT);
+    pinMode(MC_LEFT_MOTOR_STEP_PIN, OUTPUT);
+    pinMode(MC_LEFT_MOTOR_DIR_PIN, OUTPUT);
+    pinMode(MC_LEFT_MOTOR_MS2_PIN, OUTPUT);
     pinMode(LEFT_MOTOR_ENCODER_PIN, INPUT);
 
     // set up STEP and DIR pins for right motor
-    pinMode(RIGHT_MOTOR_STEP_PIN, OUTPUT);
-    pinMode(RIGHT_MOTOR_DIR_PIN, OUTPUT);
-    pinMode(RIGHT_MOTOR_MS2_PIN, OUTPUT);
+    pinMode(MC_RIGHT_MOTOR_STEP_PIN, OUTPUT);
+    pinMode(MC_RIGHT_MOTOR_DIR_PIN, OUTPUT);
+    pinMode(MC_RIGHT_MOTOR_MS2_PIN, OUTPUT);
     pinMode(RIGHT_MOTOR_ENCODER_PIN, INPUT);
 
     // start with motors disabled.
@@ -755,17 +503,11 @@ void setup()
 
     loop_counter = 0;
 
-    // set up left motor
-    left_motor_nticks = 0;
-    left_motor_counter = 0;
-    left_motor_vel = 0;
+    // initialize motor control
+    motor_control_init();
     left_motor_encoder_vel = 0;
     left_motor_prev_angle = analogRead(LEFT_MOTOR_ENCODER_PIN);
-
-    // set up right motor
-    right_motor_nticks = 0;
-    right_motor_counter = 0;
-    right_motor_vel = 0;
+;
     right_motor_encoder_vel = 0;
     right_motor_prev_angle = analogRead(RIGHT_MOTOR_ENCODER_PIN);
 
@@ -805,8 +547,8 @@ void loop()
         compl_filter_read(DT_MICROS);
 
         // read encoders
-        read_encoder_velocity(LEFT_MOTOR);
-        read_encoder_velocity(RIGHT_MOTOR);
+        read_encoder_velocity(MC_LEFT_MOTOR);
+        read_encoder_velocity(MC_RIGHT_MOTOR);
 
         // read data from serial
         serial_comm_read();
@@ -829,7 +571,8 @@ void loop()
             serial_comm_desired_vel_constrained = 0;
 
             // reset motor control variables
-            reset_motors();
+            balance_control_reset();
+            motor_control_reset();
             return;
         }
 
