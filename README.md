@@ -54,6 +54,7 @@ I initially used alternative A but I found out it does not withstand the robot's
 
 ### Low level controller (Arduino Nano)
 
+#### Inputs and outputs
 The low level controller's main responsibility is to balance the robot given the user's input (if there is any). In the current implementation the user inputs are:
 
 * linear velocity
