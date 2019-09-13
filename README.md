@@ -22,6 +22,8 @@ The body is made of multiple 3d printed components and held together by nuts and
   * 2x 5mm hex couplers: https://www.aliexpress.com/item/32959682575.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
   * 3d print a plastic wheel compatible to the above hex coupler and mount the tires of the aforementioned Pololu 90mm wheels on them. This is what I did and I will send the STL file for those wheels.
 
+I initially used alternative A but I found out it does not withstand the robot's loads very well (in my case sharp turns and collisions at 15 km/h) so I moved to alternative B. 
+
 ### Microcontrollers and computers
 * 1x Fake Arduino Nano board: https://www.aliexpress.com/item/32607801066.html?spm=a2g0s.9042311.0.0.27424c4dqhugXl
 * 1x NVIDIA Jetson Nano board: https://www.amazon.com/NVIDIA-Jetson-Nano-Developer-Kit/dp/B07PZHBDKT
