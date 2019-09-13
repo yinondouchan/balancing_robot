@@ -5,7 +5,7 @@ A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
 The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed. I will publish schematics and STL files. May also publish gcode files.
 
-## Components
+## Hardware
 
 ### Motors
 * 2x NEMA 17 stepper motors: https://www.aliexpress.com/item/32855316300.html?spm=a2g0s.9042311.0.0.27424c4dqhugXl
@@ -43,10 +43,28 @@ I initially used alternative A but I found out it does not withstand the robot's
 ### Miscellaneous
 * 1x logic level converter: https://www.aliexpress.com/item/32851503557.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
 
-## Notes on components
+## Notes on hardware
 * NEMA 17 stepper motors: If you can't obtain those motors you can, of course, try different NEMA 17 motors. I highly reccomend ones with a low resistance and a current rating of at most 2A. Even though a high resistance motor may draw significantly less current (though also a higher voltage), which may prevent the drivers from overheating, such a motor will not retain a high torque at high speeds. The motors I used are rated at 2.2V and 2A and therefore have a resistance of 1.1 Ohm which is very low for such motors.
 * Arduino Nano board: Of course you can buy an original, but for me a 2$ fake does everything I need.
 * TB67S249FTG stepper motor drivers: Those drivers are relatively expensive because they are Pololu drivers and have the feature of automatically lowering the current consumption of the motors when not needed. A generic chinese A4988 or DRV8835 will definitely do the work, though you may need to wire them differently and change the microstepping settings in the firmware. Link to the suggested alternative drivers: https://www.aliexpress.com/item/32963690420.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
 * Battery holders: In order to have 24V input voltage I daisy chained the two battery holders. I don't think it's a good idea even though it worked well up until now. Moreover, if you will need to recharge you will have to manually remove all the batteries and put them in a charger. Therefore, I instead recommend buying a 6s1p battery pack with a BMS instead. I plan to make a battery pack of my own (or buy one) and replace this hack.
 * 18650 batteries: Of course you can use other batteries. Just beware of counterfeits and make sure they can deliver at least 5A of continuous current. I measured the capacity of the batteries I bought from the link I gave and indeed their capacity was 3500 mAh so I recommend buying from them.
+
+## Software
+
+### Low level controller (Arduino Nano)
+
+#### Inputs and outputs
+The low level controller's main responsibility is to balance the robot given the user's input (if there is any). In the current implementation the user inputs are:
+
+* linear velocity
+* turn rate
+* online parameter tuning (will be discussed later)
+* emergency stop
+* linear velocity remote control sensitivity
+
+Given those inputs, the low level controller controls the velocities of the two motors.
+
+#### Block diagram
+![low_level_controller](https://github.com/yinondouchan/balancing_robot/blob/master/arduino_block_diagram.png "Low level controller")
 
