@@ -20,30 +20,14 @@ extern "C"
 // how many timer interrups to count until main loop is triggered
 #define LOOP_COUNTER_DIVISOR 40
 
-// a nice macro for calculating the sign of a number
-#define SIGN(x) (((x) > 0) - ((x) < 0))
-
-// maximum acceleration and deceleration in full steps per second
-#define MAX_ACCEL 2000
-#define MAX_DECCEL 2000
-
 // the IMU
 MPU_9250 imu;
 
 // timer for main loop
 volatile int32_t loop_counter;
 
-// true if the robot is upright
-bool upright;
-
-// true if the robot is on emergency stop 
-bool on_estop;
-
 // true if main loop was already triggered for an iteration
 bool main_loop_triggered;
-
-// control velocity after applying acceleration and deceleration constraints
-float serial_comm_desired_vel_constrained;
 
 // setup the robot's timers
 // timer 0 is used for controlling right stepper motor
@@ -107,32 +91,6 @@ ISR(TIMER1_OVF_vect)
     loop_counter = (loop_counter >= (LOOP_COUNTER_DIVISOR - 1)) ? 0 : loop_counter + 1;
 }
 
-// toggle emergency stop
-void toggle_estop()
-{
-    on_estop = !on_estop;
-}
-
-// apply acceleration and deceleration constraints to control velocity
-void calculate_constrained_control_velocity()
-{
-    // calculate difference between unconstrained and constraint control velocity
-    float vel_diff = serial_comm_desired_vel - serial_comm_desired_vel_constrained;
-
-    // calculate the sign of the above
-    int8_t vel_sign = SIGN(vel_diff);
-
-    // check if should accelerate or decelerate
-    bool accel = abs(serial_comm_desired_vel) > abs(serial_comm_desired_vel_constrained);
-
-    // set acceleration/decceleration value
-    float vel_derivative = accel ? vel_sign * MAX_ACCEL * DT_SECONDS : vel_sign * MAX_DECCEL * DT_SECONDS;
-
-    // if control velocity violates acceleration/deceleration constrains, constrain it. If not - output the same as the control velocity.
-    if (abs(vel_derivative) < abs(vel_diff)) serial_comm_desired_vel_constrained += vel_derivative;
-    else serial_comm_desired_vel_constrained = serial_comm_desired_vel;
-}
-
 // setup
 void setup()
 {
@@ -153,7 +111,7 @@ void setup()
     // init serial comm
     serial_comm_init();
     serial_comm_set_param_callback(parameters_set_parameter);
-    serial_comm_set_estop_callback(toggle_estop);
+    serial_comm_set_estop_callback(balance_control_toggle_estop);
 
     loop_counter = 0;
 
@@ -166,17 +124,24 @@ void setup()
     // initialize balancing control
     balance_control_init();
 
-    // emergency stop
-    on_estop = false;
-
-    // control velocity after applying acceleration and deceleration constraints
-    serial_comm_desired_vel_constrained = 0;
-
     // prevents main loop being triggered twice per timer interrupt
     main_loop_triggered = false;
+}
 
-    // is the robot upright?
-    upright = true;
+void read_inputs()
+{
+    // read accel and gyro values
+    imu_read_accel_and_gyro(&imu);
+
+    // read tilt angle
+    imu_compl_filter_read(DT_MICROS);
+
+    // read encoders
+    encoders_read_velocity(MC_LEFT_MOTOR);
+    encoders_read_velocity(MC_RIGHT_MOTOR);
+
+    // read data from serial
+    serial_comm_read();
 }
 
 void loop()
@@ -185,50 +150,12 @@ void loop()
     if (!main_loop_triggered && (loop_counter == 0))
     {
         main_loop_triggered = true;
-        
-        // read accel and gyro values
-        imu_read_accel_and_gyro(&imu);
 
-        // read tilt angle
-        imu_compl_filter_read(DT_MICROS);
+        // read all inputs
+        read_inputs();
 
-        // read encoders
-        encoders_read_velocity(MC_LEFT_MOTOR);
-        encoders_read_velocity(MC_RIGHT_MOTOR);
-
-        // read data from serial
-        serial_comm_read();
-
-        // detect when robot is not upright
-        if ((imu_cf_angle_x < -55) || (imu_cf_angle_x > 55)) upright = false;
-        if (!upright || on_estop)
-        {
-            // robot is either not upright or emergency stop is on
-            
-            // disable the motors
-            motor_control_disable_motors();
-
-            // check if robot is upright again
-            upright = (imu_cf_angle_x > ((int32_t)BALANCE_ANGLE - 10)) && (imu_cf_angle_x < ((int32_t)BALANCE_ANGLE + 10));
-
-            if (upright) imu_gyro_angle_x = imu_cf_angle_x;
-
-            // reset desired velocity
-            serial_comm_desired_vel_constrained = 0;
-
-            // reset motor control variables
-            balance_control_reset();
-            motor_control_reset();
-            return;
-        }
-
-        calculate_constrained_control_velocity();
-
-        // filter angular velocity control to avoid those annoying discrete level sounds
-        serial_comm_desired_vel_diff_lpf = 0.1 * serial_comm_desired_vel_diff + 0.9 * serial_comm_desired_vel_diff_lpf;
-
-        // main balancing algorithm
-        balance_control(serial_comm_desired_vel_constrained, - serial_comm_desired_vel_diff_lpf, DT_MICROS);
+        // control balance
+        balance_control();
     }
     else if (loop_counter != 0)
     {

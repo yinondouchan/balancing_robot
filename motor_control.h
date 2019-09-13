@@ -21,7 +21,7 @@
 // right motor microstepping pins. Actual microstepping values depend on the motor driver used
 #define MC_RIGHT_MOTOR_MS1_PIN 11
 #define MC_RIGHT_MOTOR_MS2_PIN 12
-#define MC_RIGHT_MOTOR_MS3_PIN 100
+#define MC_RIGHT_MOTOR_MS3_PIN 10
 
 // motor direction
 #define MC_MOTOR_DIRECTION_FORWARD 0
@@ -73,6 +73,6 @@ void motor_control_reset();
 void motor_control_disable_motors();
 
 // control velocity with a stall detection layer built upon it
-void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode);
+void motor_control_set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode);
 
 #endif // MOTOR_CONTROL_H

@@ -1,6 +1,9 @@
 #ifndef IMU_H
 #define IMU_H
 
+// set i2c frequency to 400 kHz (used in the mpu9250 library)
+#define TWI_FREQ 400000L
+
 extern "C"
 {
   #include "avr_i2c.h"

@@ -268,7 +268,7 @@ void motor_control_disable_motors()
 }
 
 // control velocity with a stall detection layer built upon it
-void set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode)
+void motor_control_set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode)
 {
     // velocity difference in full steps between control velocity and encoder velocity
     float actual_vel_error = (motor == MC_LEFT_MOTOR) ? (motor_control_left_motor_vel - encoders_left_motor_vel) : (motor_control_right_motor_vel - encoders_right_motor_vel);

@@ -5,6 +5,7 @@
 #include "motor_control.h"
 #include "encoders.h"
 #include "parameters.h"
+#include "serial_comm.h"
 
 // output velocity to motor from balancing algorithm
 float balance_point_power;
@@ -18,6 +19,82 @@ float bp_i;
 
 // low pass filtered velocity error
 float vel_error_lpf;
+
+// true if the robot is upright
+bool upright;
+
+// true if the robot is on emergency stop 
+bool on_estop;
+
+// control velocity after applying acceleration and deceleration constraints
+float serial_comm_desired_vel_constrained;
+
+// toggle emergency stop
+void balance_control_toggle_estop()
+{
+    on_estop = !on_estop;
+}
+
+// apply acceleration and deceleration constraints to control velocity
+void balance_control_calculate_constrained_control_velocity()
+{
+    // calculate difference between unconstrained and constraint control velocity
+    float vel_diff = serial_comm_desired_vel - serial_comm_desired_vel_constrained;
+
+    // calculate the sign of the above
+    int8_t vel_sign = SIGN(vel_diff);
+
+    // check if should accelerate or decelerate
+    bool accel = abs(serial_comm_desired_vel) > abs(serial_comm_desired_vel_constrained);
+
+    // set acceleration/decceleration value
+    float vel_derivative = accel ? vel_sign * MAX_ACCEL * DT_SECONDS : vel_sign * MAX_DECCEL * DT_SECONDS;
+
+    // if control velocity violates acceleration/deceleration constrains, constrain it. If not - output the same as the control velocity.
+    if (abs(vel_derivative) < abs(vel_diff)) serial_comm_desired_vel_constrained += vel_derivative;
+    else serial_comm_desired_vel_constrained = serial_comm_desired_vel;
+}
+
+// this is where all the balance control is done.
+// In this implementation, the robot either lays down or keeps itself upright
+void balance_control()
+{
+    // detect when robot is not upright
+    if ((imu_cf_angle_x < -55) || (imu_cf_angle_x > 55)) upright = false;
+    if (!upright || on_estop)
+    {
+        // robot is either not upright or emergency stop is on
+        // check if robot is upright again
+        upright = (imu_cf_angle_x > ((int32_t)BALANCE_ANGLE - 10)) && (imu_cf_angle_x < ((int32_t)BALANCE_ANGLE + 10));
+    
+        if (upright) imu_gyro_angle_x = imu_cf_angle_x;
+        balance_control_lay_lown();
+        return;
+    }
+
+    // constrain acceleration and deceleration
+    balance_control_calculate_constrained_control_velocity();
+
+    // filter angular velocity control to avoid those annoying discrete level sounds
+    serial_comm_desired_vel_diff_lpf = 0.1 * serial_comm_desired_vel_diff + 0.9 * serial_comm_desired_vel_diff_lpf;
+
+    // main balancing algorithm
+    balance_control_keep_upright(serial_comm_desired_vel_constrained, - serial_comm_desired_vel_diff_lpf, DT_MICROS);
+}
+
+// lay down
+void balance_control_lay_lown()
+{   
+    // disable the motors
+    motor_control_disable_motors();
+
+    // reset desired velocity
+    serial_comm_desired_vel_constrained = 0;
+
+    // reset motor control variables
+    balance_control_reset();
+    motor_control_reset();
+}
 
 /* 
  *  the balancing algorithm - consists of two layers of control and some additional tweaks
@@ -35,7 +112,7 @@ float vel_error_lpf;
  *  - top layer: change I component only when control tells the robot to stop (desired vel and turn rate are 0). 
  *  This removes unnecessary wobbliness in lower speeds by decreasing I component windup.
  */
-void balance_control(int32_t desired_vel, int32_t desired_turn_rate, int32_t dt_micros)
+void balance_control_keep_upright(int32_t desired_vel, int32_t desired_turn_rate, int32_t dt_micros)
 {
     // tilt angle angle
     float angle = imu_cf_angle_x;
@@ -84,8 +161,8 @@ void balance_control(int32_t desired_vel, int32_t desired_turn_rate, int32_t dt_
     power = constrain(power, -parameters.balance_vel_limit, parameters.balance_vel_limit); 
     
     // control motor velocities with the obtained output and desired turn rate
-    set_velocity_with_stall_detection(MC_LEFT_MOTOR, power + desired_turn_rate, MC_STEP_MODE_AUTO);
-    set_velocity_with_stall_detection(MC_RIGHT_MOTOR, power - desired_turn_rate, MC_STEP_MODE_AUTO);
+    motor_control_set_velocity_with_stall_detection(MC_LEFT_MOTOR, power + desired_turn_rate, MC_STEP_MODE_AUTO);
+    motor_control_set_velocity_with_stall_detection(MC_RIGHT_MOTOR, power - desired_turn_rate, MC_STEP_MODE_AUTO);
 
     // store filtered and unfiltered velocity error values for next iteration
     prev_vel = vel_error;
@@ -117,4 +194,13 @@ void balance_control_init()
 
     // low pass filtered velocity error of the current cycle
     vel_error_lpf;
+
+    // emergency stop
+    on_estop = false;
+
+    // control velocity after applying acceleration and deceleration constraints
+    serial_comm_desired_vel_constrained = 0;
+
+    // is the robot upright?
+    upright = true;
 }
