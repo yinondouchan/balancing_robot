@@ -39,7 +39,7 @@ void encoders_read_velocity(uint8_t encoder)
     if (encoder == ENCODERS_LEFT_ENCODER)
     {
         // add a low-pass filter
-        encoders_left_motor_vel = 0.5 * encoders_left_motor_vel + 0.5 * -new_motor_encoder_vel;
+        encoders_left_motor_vel = 0.5 * encoders_left_motor_vel + 0.5 * new_motor_encoder_vel;
 
         // set previous angle value
         left_motor_prev_angle = new_angle;
@@ -47,7 +47,7 @@ void encoders_read_velocity(uint8_t encoder)
     else
     {
         // add a low-pass filter
-        encoders_right_motor_vel = 0.5 * encoders_right_motor_vel + 0.5 * new_motor_encoder_vel;
+        encoders_right_motor_vel = 0.5 * encoders_right_motor_vel + 0.5 * -new_motor_encoder_vel;
 
         // set previous angle value
         right_motor_prev_angle = new_angle;

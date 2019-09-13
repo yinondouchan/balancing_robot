@@ -2,26 +2,26 @@
 #define MOTOR_CONTROL_H
 
 // left motor step and direction pins
-#define MC_LEFT_MOTOR_STEP_PIN 4
-#define MC_LEFT_MOTOR_DIR_PIN 2
+#define MC_RIGHT_MOTOR_STEP_PIN 4
+#define MC_RIGHT_MOTOR_DIR_PIN 2
 
 // right motor step and direction pins
-#define MC_RIGHT_MOTOR_STEP_PIN 8
-#define MC_RIGHT_MOTOR_DIR_PIN 7
+#define MC_LEFT_MOTOR_STEP_PIN 8
+#define MC_LEFT_MOTOR_DIR_PIN 7
 
 // motor index
 #define MC_LEFT_MOTOR 0
 #define MC_RIGHT_MOTOR 1
 
 // left motor microstepping pins. Actual microstepping values depend on the motor driver used
-#define MC_LEFT_MOTOR_MS1_PIN 6
-#define MC_LEFT_MOTOR_MS2_PIN 5
-#define MC_LEFT_MOTOR_MS3_PIN 9
+#define MC_RIGHT_MOTOR_MS1_PIN 6
+#define MC_RIGHT_MOTOR_MS2_PIN 5
+#define MC_RIGHT_MOTOR_MS3_PIN 9
 
 // right motor microstepping pins. Actual microstepping values depend on the motor driver used
-#define MC_RIGHT_MOTOR_MS1_PIN 11
-#define MC_RIGHT_MOTOR_MS2_PIN 12
-#define MC_RIGHT_MOTOR_MS3_PIN 10
+#define MC_LEFT_MOTOR_MS1_PIN 11
+#define MC_LEFT_MOTOR_MS2_PIN 12
+#define MC_LEFT_MOTOR_MS3_PIN 10
 
 // motor direction
 #define MC_MOTOR_DIRECTION_FORWARD 0

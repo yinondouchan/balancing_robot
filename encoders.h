@@ -3,10 +3,10 @@
 #define ENCODERS_RIGHT_ENCODER 1
 
 // left motor encoder pin
-#define ENCODERS_LEFT_MOTOR_PIN A1
+#define ENCODERS_LEFT_MOTOR_PIN A0
 
 // right motor encoder pin
-#define ENCODERS_RIGHT_MOTOR_PIN A0
+#define ENCODERS_RIGHT_MOTOR_PIN A1
 
 // number of encoder values per full revolution of the motor
 #define ENCODER_FULL_SCALE 1024

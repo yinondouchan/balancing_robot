@@ -79,7 +79,7 @@ void balance_control()
     serial_comm_desired_vel_diff_lpf = 0.1 * serial_comm_desired_vel_diff + 0.9 * serial_comm_desired_vel_diff_lpf;
 
     // main balancing algorithm
-    balance_control_keep_upright(serial_comm_desired_vel_constrained, - serial_comm_desired_vel_diff_lpf, DT_MICROS);
+    balance_control_keep_upright(serial_comm_desired_vel_constrained, serial_comm_desired_vel_diff_lpf, DT_MICROS);
 }
 
 // lay down
