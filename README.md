@@ -40,6 +40,10 @@ I initially used alternative A but I found out it does not withstand the robot's
 ### Remote control
 * 1x HC-05 bluetooth module: https://www.aliexpress.com/item/32806048234.html?spm=a2g0s.9042311.0.0.27424c4d3Cm7zj
 
+### Camera
+
+* Waveshare 160-degree FOV camera with an IMX219 sensor: https://www.waveshare.com/imx219-160-camera.htm
+
 ### Miscellaneous
 * 1x logic level converter: https://www.aliexpress.com/item/32851503557.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
 
@@ -49,6 +53,7 @@ I initially used alternative A but I found out it does not withstand the robot's
 * TB67S249FTG stepper motor drivers: Those drivers are relatively expensive because they are Pololu drivers and have the feature of automatically lowering the current consumption of the motors when not needed. A generic chinese A4988 or DRV8835 will definitely do the work, though you may need to wire them differently and change the microstepping settings in the firmware. Link to the suggested alternative drivers: https://www.aliexpress.com/item/32963690420.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
 * Battery holders: In order to have 24V input voltage I daisy chained the two battery holders. I don't think it's a good idea even though it worked well up until now. Moreover, if you will need to recharge you will have to manually remove all the batteries and put them in a charger. Therefore, I instead recommend buying a 6s1p battery pack with a BMS instead. I plan to make a battery pack of my own (or buy one) and replace this hack.
 * 18650 batteries: Of course you can use other batteries. Just beware of counterfeits and make sure they can deliver at least 5A of continuous current. I measured the capacity of the batteries I bought from the link I gave and indeed their capacity was 3500 mAh so I recommend buying from them.
+* While the camera noted above is supported by the Jetson Nano board, there are many cameras (and possibly other devices) that are not supported by the Jetson Nano. One example of an unsupported device is a V1 Raspberry PI camera (based on an ov5647 sensor) - it will simply not work (unless you want to compile the ov5647 driver as a loadable kernel module...). Therefore, when trying new devices double check that the Jetson Nano supports them.
 
 ## Software
 
