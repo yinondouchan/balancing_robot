@@ -65,5 +65,5 @@ The low level controller's main responsibility is to balance the robot given the
 Given those inputs, the low level controller controls the velocities of the two motors.
 
 #### Block diagram
-![alt_text](https://https://github.com/yinondouchan/balancing_robot/blob/master/arduino_block_diagram.png "Low level controller")
+![low_level_controller](https://github.com/yinondouchan/balancing_robot/blob/master/arduino_block_diagram.png "Low level controller")
 
