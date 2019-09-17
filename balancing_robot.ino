@@ -111,7 +111,7 @@ void setup()
     // init serial comm
     serial_comm_init();
     serial_comm_set_param_callback(parameters_set_parameter);
-    serial_comm_set_estop_callback(balance_control_toggle_estop);
+    serial_comm_set_estop_callback(balance_control_on_estop);
 
     loop_counter = 0;
 
@@ -136,9 +136,11 @@ void read_inputs()
     // read tilt angle
     imu_compl_filter_read(DT_MICROS);
 
-    // read encoders
+    // read encoders if stall detection is enabled
+#if ENABLE_STALL_DETECTION
     encoders_read_velocity(MC_LEFT_MOTOR);
     encoders_read_velocity(MC_RIGHT_MOTOR);
+#endif
 
     // read data from serial
     serial_comm_read();

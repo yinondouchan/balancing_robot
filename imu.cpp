@@ -6,7 +6,7 @@
 #define CF_CONST 0.999
 
 // number of averaging samples for gyro calibration
-#define GYRO_CALIBRATION_NSAMPLES 200
+#define GYRO_CALIBRATION_NSAMPLES 50
 
 // hold IMU data and raw data
 imu_data_t imu_data;

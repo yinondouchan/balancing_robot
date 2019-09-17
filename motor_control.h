@@ -41,10 +41,13 @@
 
 // velocity difference threshold for triggering the stall detection and handling mechanism
 // threshold is in units of full-steps/sec between desired velocity and what the encoder reads
-#define MC_STALL_SPEED_DIFF_THRESHOLD 200
+#define MC_STALL_SPEED_DIFF_THRESHOLD 400
 
 // the amount of acceleration back to desired velocity given a stall
 #define MC_STALL_ACCEL_SPEED 100
+
+// enable stall detection
+#define ENABLE_STALL_DETECTION true
 
 extern float motor_control_left_motor_vel;
 extern float motor_control_right_motor_vel;
