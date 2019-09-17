@@ -3,7 +3,43 @@ A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
 ## Body
 
-The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed. I will publish schematics and STL files. May also publish gcode files.
+The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed.
+
+### Components
+
+Below is a list of the body components printed in a 3d printer. Each component has an stl file in the 3d_models directory.
+
+- 2x side bars (SideBar.stl)
+- 5x horizontal beams (HorizontalBeamV4.stl)
+- 2x motor bracket connectors (MotorBracketConnectorV5.stl)
+- 1x plate for holding the batteries (BatteriesPlate.stl)
+- 1x plate for holding the Jetson Nano board (JetsonNanoPlate.stl)
+- 1x plate for holding the main board (MainBoardPlateV2.stl)
+- 1x bracket for the voltage/current meter (MeterHolder.stl)
+- 1x camera holder (CameraHolder.stl)
+- (optional) 2x custom pololu 90mm wheels, one is a mirrored version of the other (Pololu90mmWheel2.stl, Pololu90mmWheel2Mirrored.stl)
+
+### Assembly
+
+All components except a few can be assembled using M3 nuts and bolts. The custom Pololu wheels need M4 screws with a length of at least 8mm.
+
+I tried to make the components as modular as possible. That's why I bombarded the side bars and horizontal bars with a 3.5mm diameter slots so it will be possible to mount a wide variety of objects in a wide variety of places on the robot.
+
+Instructions (photos will come):
+
+Skeleton:
+- (2x side bars <- 2x horizontal beams) Connect two horizontal beams to the lowest part of the bottom most slots of the side bars.
+- (2x side bars <- 2x horizontal beams) Connect two horizontal beams to the lowest part of the second from bottom slots of the side bars.
+- (2x side bars <- 1x horizontal beam) Connect one horizontal beam to the lowest part of the upper most slot in the back of the side bar.
+
+Motors:
+- (2x side bars, 2x horizontal beams <- 2x motor bracket connectors) Connect the two motor bracket connectors to the side bars and horizontal beams. 
+
+Electronics:
+- (2x horizontal beams <- batteries plate) Connect batteries plate to the middle of the two lower horizontal beams.
+- (2x horizontal beams <- main board plate) Connect main board plate to the right side of the two middle horizontal beams.
+- (2x horizontal beams <- jetson nano plate) Connect jetson nano plate to the left side of the two middle horizontal beams.
+- Camera and voltage meter: I mounted the camera to the middle of the forward-middle horizontal beam and the meter in the left side, but you can try different positions.
 
 ## Hardware
 
@@ -40,8 +76,13 @@ I initially used alternative A but I found out it does not withstand the robot's
 ### Remote control
 * 1x HC-05 bluetooth module: https://www.aliexpress.com/item/32806048234.html?spm=a2g0s.9042311.0.0.27424c4d3Cm7zj
 
+### Camera
+
+* Waveshare 160-degree FOV camera with an IMX219 sensor: https://www.waveshare.com/imx219-160-camera.htm
+
 ### Miscellaneous
 * 1x logic level converter: https://www.aliexpress.com/item/32851503557.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
+* 1x voltage and current meter: https://www.aliexpress.com/item/32824062417.html?spm=a2g0o.productlist.0.0.41297d3b2hvniV&algo_pvid=84a409ea-4096-4331-85cf-b470d72a05e7&algo_expid=84a409ea-4096-4331-85cf-b470d72a05e7-0&btsid=e9c926be-b88a-42ee-b7e7-672877d23d78&ws_ab_test=searchweb0_0,searchweb201602_9,searchweb201603_52
 
 ## Notes on hardware
 * NEMA 17 stepper motors: If you can't obtain those motors you can, of course, try different NEMA 17 motors. I highly reccomend ones with a low resistance and a current rating of at most 2A. Even though a high resistance motor may draw significantly less current (though also a higher voltage), which may prevent the drivers from overheating, such a motor will not retain a high torque at high speeds. The motors I used are rated at 2.2V and 2A and therefore have a resistance of 1.1 Ohm which is very low for such motors.
@@ -49,6 +90,11 @@ I initially used alternative A but I found out it does not withstand the robot's
 * TB67S249FTG stepper motor drivers: Those drivers are relatively expensive because they are Pololu drivers and have the feature of automatically lowering the current consumption of the motors when not needed. A generic chinese A4988 or DRV8835 will definitely do the work, though you may need to wire them differently and change the microstepping settings in the firmware. Link to the suggested alternative drivers: https://www.aliexpress.com/item/32963690420.html?spm=a2g0s.9042311.0.0.27424c4docg9sb
 * Battery holders: In order to have 24V input voltage I daisy chained the two battery holders. I don't think it's a good idea even though it worked well up until now. Moreover, if you will need to recharge you will have to manually remove all the batteries and put them in a charger. Therefore, I instead recommend buying a 6s1p battery pack with a BMS instead. I plan to make a battery pack of my own (or buy one) and replace this hack.
 * 18650 batteries: Of course you can use other batteries. Just beware of counterfeits and make sure they can deliver at least 5A of continuous current. I measured the capacity of the batteries I bought from the link I gave and indeed their capacity was 3500 mAh so I recommend buying from them.
+* While the camera noted above is supported by the Jetson Nano board, there are many cameras (and possibly other devices) that are not supported by the Jetson Nano. One example of an unsupported device is a V1 Raspberry PI camera (based on an ov5647 sensor) - it will simply not work (unless you want to compile the ov5647 driver as a loadable kernel module...). Therefore, when trying new devices double check that the Jetson Nano supports them.
+
+## Wiring
+
+TODO
 
 ## Software
 
@@ -67,4 +113,13 @@ Given those inputs, the low level controller controls the velocities of the two 
 
 #### Block diagram
 ![low_level_controller](https://github.com/yinondouchan/balancing_robot/blob/master/arduino_block_diagram.png "Low level controller")
+
+### High level controller (Jetson Nano)
+
+Currently, the high level controller is a mix of experimental and proof-of-concept level software pieces. Yes, it sounds bad, but I will eventually organize it to something more coherent. The currently implemented software pieces are:
+
+* Camera streaming - streams the video from the CSI camera to a webpage
+* Follow me - detects and tracks an Aruco marker and makes the robot follow this marker by using the low level controller.
+* trt-yolo-video - A TensorRT implementation of the YOLO detector (either V2 or V3, tiny and not tiny, can be selected in configuration) which takes the CSI camera's video as input and optionally outputs the video alongside with the detected objects to a webpage
+* trt-goturn - A TensorRT accelerated GOTURN tracker. Almost works, but not yet!
 
