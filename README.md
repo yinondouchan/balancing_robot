@@ -3,7 +3,21 @@ A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
 ## Body
 
-The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed. I will publish schematics and STL files. May also publish gcode files.
+The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed.
+
+### Components
+
+Below is a list of the body components printed in a 3d printer. Each component has an stl file in the 3d_models directory.
+
+- 2x side bars (SideBar.stl)
+- 5x horizontal beams (HorizontalBeamV4.stl)
+- 2x motor bracket connectors (MotorBracketConnectorV5.stl)
+- 1x plate for holding the batteries (BatteriesPlate.stl)
+- 1x plate for holding the Jetson Nano board (JetsonNanoPlate.stl)
+- 1x plate for holding the main board (MainBoardPlateV2.stl)
+- 1x bracket for the voltage/current meter (MeterHolder.stl)
+- 1x camera holder (CameraHolder.stl)
+- (optional) 2x custom pololu 90mm wheels, one is a mirrored version of the other (Pololu90mmWheel2.stl, Pololu90mmWheel2Mirrored.stl)
 
 ## Hardware
 
