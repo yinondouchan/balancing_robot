@@ -121,7 +121,7 @@ void balance_control_keep_upright(int32_t desired_vel, int32_t desired_turn_rate
         vel_error = desired_vel - (motor_control_right_motor_vel + motor_control_left_motor_vel)/2;
     }
 
-    if ((desired_vel == 0) && (desired_turn_rate == 0))
+    if ((desired_vel == 0))
     {
         // only change I component when in stop in order to compensate for balance angle error
         bp_i += parameters.vel_pid_i * vel_error * dt_micros;
@@ -358,5 +358,5 @@ void balance_control_init()
     serial_comm_desired_vel_constrained = 0;
 
     // first thing to do is to get upright
-    balance_control_set_state(GET_UPRIGHT);
+    balance_control_set_state(LAYING_DOWN);
 }
