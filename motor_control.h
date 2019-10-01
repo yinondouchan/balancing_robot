@@ -57,11 +57,8 @@ extern bool motor_control_on_stall;
 // initialize motor control module
 void motor_control_init();
 
-// set pulse rate for left motor driver
-void motor_control_set_step_rate_left(float velocity);
-
-// set pulse rate for right motor driver
-void motor_control_set_step_rate_right(float velocity);
+// set pulse rate
+void motor_control_set_step_rate(int8_t motor, float velocity);
 
 // set the velocity of a motor with a specific step_mode (full step or microstepping)
 void motor_control_set_velocity(uint8_t motor, float velocity, uint8_t step_mode);
