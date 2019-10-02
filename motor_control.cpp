@@ -91,22 +91,67 @@ void motor_control_set_step_rate(int8_t motor, float velocity)
         left_motor_nticks = 1;
         return;
     }
-
-    uint16_t hardware_prescaler = 8;
     
     // determine highest nticks (timer interrupts per step pulse) such that OCR can be of the highest value, yet lower than 256
-    int32_t max_n_ticks = max(ceil((float)CLOCK_SPEED_HZ / (256 * hardware_prescaler * velocity)), 2);
+    int32_t combined_prescaler = max(ceil((float)CLOCK_SPEED_HZ / (256 * velocity)), 2);
+    uint16_t hardware_prescaler = motor_control_set_highest_hw_prescaler(motor, combined_prescaler);
+    int32_t software_prescaler = combined_prescaler / hardware_prescaler + 1;
 
     // given the nticks calculate the OCR value
     if (motor == MC_LEFT_MOTOR)
     {
-        left_motor_nticks = max_n_ticks;
-        OCR2A = CLOCK_SPEED_HZ / (max_n_ticks * hardware_prescaler * velocity) - 1;
+        left_motor_nticks = software_prescaler;
+        OCR2A = CLOCK_SPEED_HZ / (software_prescaler * hardware_prescaler * velocity) - 1;
     }
     else // motor == MC_RIGHT_MOTOR
     {
-        right_motor_nticks = max_n_ticks;
-        OCR0A = CLOCK_SPEED_HZ / (max_n_ticks * hardware_prescaler * velocity) - 1;
+        right_motor_nticks = software_prescaler;
+        OCR0A = CLOCK_SPEED_HZ / (software_prescaler * hardware_prescaler * velocity) - 1;
+    }
+}
+
+// set highest possible hardware prescaler given a required combined prescaler for maintaining a specific pulse rate
+uint16_t motor_control_set_highest_hw_prescaler(int8_t motor, uint16_t combined_prescaler)
+{   
+    if (combined_prescaler >= 1024)
+    {
+        // set hardware prescaler to 1024
+        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111111;
+        else TCCR0B = TCCR0B & 0b11111000 | 0b11111101;
+
+        return 1024;
+    }
+    else if (combined_prescaler >= 256)
+    {
+        // set hardware prescaler to 256
+        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111110;
+        else TCCR0B = TCCR0B & 0b11111000 | 0b11111100;
+
+        return 256;
+    }
+    else if (combined_prescaler >= 64)
+    {
+        // set hardware prescaler to 64
+        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111100;
+        else TCCR0B = TCCR0B & 0b11111000 | 0b11111011;
+
+        return 64;
+    }
+    else if (combined_prescaler >= 8)
+    {
+        // set hardware prescaler to 8
+        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111010;
+        else TCCR0B = TCCR0B & 0b11111000 | 0b11111010;
+
+        return 8;
+    }
+    else // combined_prescaler < 8. That's pretty darn fast. Are you chasing an airplane?
+    {
+        // set hardware prescaler to 1
+        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111001;
+        else TCCR0B = TCCR0B & 0b11111000 | 0b11111001;
+
+        return 1;
     }
 }
 

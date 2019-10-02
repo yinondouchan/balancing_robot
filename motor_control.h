@@ -60,6 +60,9 @@ void motor_control_init();
 // set pulse rate
 void motor_control_set_step_rate(int8_t motor, float velocity);
 
+// set highest possible hardware prescaler given a required combined prescaler for maintaining a specific pulse rate
+uint16_t motor_control_set_highest_hw_prescaler(int8_t motor, uint16_t combined_prescaler);
+
 // set the velocity of a motor with a specific step_mode (full step or microstepping)
 void motor_control_set_velocity(uint8_t motor, float velocity, uint8_t step_mode);
 
