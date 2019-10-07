@@ -49,6 +49,9 @@
 // enable stall detection
 #define ENABLE_STALL_DETECTION true
 
+// number of consecutive iterations with desired_vel != encoder_vel required to declare a stall
+#define MC_STALL_DETECTION_TRIGGER_COUNT 2
+
 extern float motor_control_left_motor_vel;
 extern float motor_control_right_motor_vel;
 

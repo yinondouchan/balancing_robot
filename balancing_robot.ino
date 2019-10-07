@@ -146,6 +146,8 @@ void read_inputs()
     serial_comm_read();
 }
 
+int32_t ctr = 0;
+
 void loop()
 {
     // 200Hz loop rate
@@ -158,6 +160,8 @@ void loop()
 
         // control balance
         balance_control();
+
+        ctr++;
     }
     else if (loop_counter != 0)
     {

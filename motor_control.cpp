@@ -14,12 +14,20 @@ int32_t left_motor_nticks;
 // number of timer compare match interrupts per STEP pulse sent to right motor driver
 int32_t right_motor_nticks;
 
+// current hardware prescaler for right and left motor
+uint16_t right_motor_hw_prescaler;
+uint16_t left_motor_hw_prescaler;
+
 // motor's step velocity in full-steps per second
 float motor_control_left_motor_vel;
 float motor_control_right_motor_vel;
 
 // true if one of the robot's motors are stalled
 bool motor_control_on_stall;
+
+// how many consecutive rocks left/right motor is stalling
+uint16_t left_motor_stall_count;
+uint16_t right_motor_stall_count;
 
 // step modes for various stepper motor drivers
 #if MC_MOTOR_DRIVER == MOTOR_DRIVER_A4988
@@ -67,17 +75,22 @@ void motor_control_init()
     left_motor_nticks = 0;
     left_motor_counter = 0;
     motor_control_left_motor_vel = 0;
+    left_motor_hw_prescaler = 8;
 
      // set up right motor
     right_motor_nticks = 0;
     right_motor_counter = 0;
     motor_control_right_motor_vel = 0;
+    right_motor_hw_prescaler = 8;
 
     // stall detection
     motor_control_on_stall = false;
 
     // start with motors disabled.
     motor_control_disable_motors();
+
+    left_motor_stall_count = 0;
+    right_motor_stall_count = 0;
 }
 
 // set pulse rate for a motor driver
@@ -93,9 +106,9 @@ void motor_control_set_step_rate(int8_t motor, float velocity)
     }
     
     // determine highest nticks (timer interrupts per step pulse) such that OCR can be of the highest value, yet lower than 256
-    int32_t combined_prescaler = max(ceil((float)CLOCK_SPEED_HZ / (256 * velocity)), 2);
-    uint16_t hardware_prescaler = motor_control_set_highest_hw_prescaler(motor, combined_prescaler);
-    int32_t software_prescaler = combined_prescaler / hardware_prescaler + 1;
+    uint16_t hardware_prescaler = 8;// motor_control_set_highest_hw_prescaler(motor, combined_prescaler);
+    int32_t software_prescaler = max(ceil((float)CLOCK_SPEED_HZ / (256 * hardware_prescaler * velocity)), 2);
+    //int32_t software_prescaler = max(combined_prescaler / hardware_prescaler, 1) + 1;
 
     // given the nticks calculate the OCR value
     if (motor == MC_LEFT_MOTOR)
@@ -115,44 +128,104 @@ uint16_t motor_control_set_highest_hw_prescaler(int8_t motor, uint16_t combined_
 {   
     if (combined_prescaler >= 1024)
     {
+        // do nothing if prescaler is already set
+        if ((motor == MC_LEFT_MOTOR) && (left_motor_hw_prescaler == 1024)) return 1024;
+        else if ((motor == MC_RIGHT_MOTOR) && (right_motor_hw_prescaler == 1024)) return 1024;
+        
         // set hardware prescaler to 1024
-        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111111;
-        else TCCR0B = TCCR0B & 0b11111000 | 0b11111101;
+        if (motor == MC_LEFT_MOTOR)
+        {
+            left_motor_hw_prescaler = 1024;
+            TCCR2B = TCCR2B & 0b11111000 | 0b11111111;
+        }
+        else
+        {
+            right_motor_hw_prescaler = 1024;
+            TCCR0B = TCCR0B & 0b11111000 | 0b11111101;
+        }
 
         return 1024;
     }
     else if (combined_prescaler >= 256)
-    {
+    {   
+        // do nothing if prescaler is already set
+        if ((motor == MC_LEFT_MOTOR) && (left_motor_hw_prescaler == 256)) return 256;
+        else if ((motor == MC_RIGHT_MOTOR) && (right_motor_hw_prescaler == 256)) return 256;
+      
         // set hardware prescaler to 256
-        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111110;
-        else TCCR0B = TCCR0B & 0b11111000 | 0b11111100;
+        if (motor == MC_LEFT_MOTOR)
+        {
+            left_motor_hw_prescaler = 256;
+            TCCR2B = TCCR2B & 0b11111000 | 0b11111110;
+        }
+        else
+        {
+            right_motor_hw_prescaler = 256;
+            TCCR0B = TCCR0B & 0b11111000 | 0b11111100;
+        }
 
         return 256;
     }
     else if (combined_prescaler >= 64)
     {
+        // do nothing if prescaler is already set
+        if ((motor == MC_LEFT_MOTOR) && (left_motor_hw_prescaler == 64)) return 64;
+        else if ((motor == MC_RIGHT_MOTOR) && (right_motor_hw_prescaler == 64)) return 64;
+      
         // set hardware prescaler to 64
-        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111100;
-        else TCCR0B = TCCR0B & 0b11111000 | 0b11111011;
+        if (motor == MC_LEFT_MOTOR)
+        {
+            left_motor_hw_prescaler = 64;
+            TCCR2B = TCCR2B & 0b11111000 | 0b11111100;
+        }
+        else
+        {
+            right_motor_hw_prescaler = 64;
+            TCCR0B = TCCR0B & 0b11111000 | 0b11111011;
+        }
 
         return 64;
     }
-    else if (combined_prescaler >= 8)
+    else
     {
+        // do nothing if prescaler is already set
+        if ((motor == MC_LEFT_MOTOR) && (left_motor_hw_prescaler == 8)) return 8;
+        else if ((motor == MC_RIGHT_MOTOR) && (right_motor_hw_prescaler == 8)) return 8;
+      
         // set hardware prescaler to 8
-        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111010;
-        else TCCR0B = TCCR0B & 0b11111000 | 0b11111010;
+        if (motor == MC_LEFT_MOTOR)
+        {
+            left_motor_hw_prescaler = 8;
+            TCCR2B = TCCR2B & 0b11111000 | 0b11111010;
+        }
+        else
+        {
+            right_motor_hw_prescaler = 8;
+            TCCR0B = TCCR0B & 0b11111000 | 0b11111010;
+        }
 
         return 8;
     }
-    else // combined_prescaler < 8. That's pretty darn fast. Are you chasing an airplane?
+    /*else // combined_prescaler < 8. That's pretty darn fast. Are you chasing an airplane?
     {
+        // do nothing if prescaler is already set
+        if ((motor == MC_LEFT_MOTOR) && (left_motor_hw_prescaler == 1)) return 1;
+        else if ((motor == MC_RIGHT_MOTOR) && (right_motor_hw_prescaler == 1)) return 1;
+    
         // set hardware prescaler to 1
-        if (motor == MC_LEFT_MOTOR) TCCR2B = TCCR2B & 0b11111000 | 0b11111001;
-        else TCCR0B = TCCR0B & 0b11111000 | 0b11111001;
+        if (motor == MC_LEFT_MOTOR)
+        {
+            left_motor_hw_prescaler = 1;
+            TCCR2B = TCCR2B & 0b11111000 | 0b11111001;
+        }
+        else
+        {
+            right_motor_hw_prescaler = 8;
+            TCCR0B = TCCR0B & 0b11111000 | 0b11111001;
+        }
 
         return 1;
-    }
+    }*/
 }
 
 // set the velocity of a motor with a specific step_mode (full step or microstepping)
@@ -257,7 +330,21 @@ void motor_control_set_velocity_with_stall_detection(int8_t motor, float velocit
     float actual_vel_error = (motor == MC_LEFT_MOTOR) ? (motor_control_left_motor_vel - encoders_left_motor_vel) : (motor_control_right_motor_vel - encoders_right_motor_vel);
 
     // true if stall detected (velocity difference is higher than the defined threshold)
-    motor_control_on_stall = abs(actual_vel_error) >= MC_STALL_SPEED_DIFF_THRESHOLD;
+    bool vel_discrepancy = abs(actual_vel_error) >= MC_STALL_SPEED_DIFF_THRESHOLD;
+    /*if (vel_discrepancy)
+    {
+        if (motor == MC_LEFT_MOTOR) left_motor_stall_count++;
+        else right_motor_stall_count++;
+    }
+    else
+    {
+        if (motor == MC_LEFT_MOTOR) left_motor_stall_count = 0;
+        else right_motor_stall_count = 0;
+    }
+
+    // check whether to declare that stall detected
+    uint16_t stall_count = motor == MC_LEFT_MOTOR ? left_motor_stall_count : right_motor_stall_count;*/
+    motor_control_on_stall = vel_discrepancy;// && (stall_count >= MC_STALL_DETECTION_TRIGGER_COUNT);
 
     if (motor_control_on_stall)
     {        
