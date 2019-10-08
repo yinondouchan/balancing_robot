@@ -59,11 +59,17 @@ void setup_timers()
                    // (as we do not know the initial  values)
 
     // enable overflow interrupt for timer 1
-    TIMSK1 |= (1 << TOIE1);
+    TIMSK1 |= (1 << OCIE1A);
 
-    // set fast PWM mode and set prescaler to 8
-    TCCR1A += _BV(WGM10);
-    TCCR1B |= _BV(CS11) | _BV(WGM12);
+    // set prescaler to 8
+    TCCR1B |= _BV(CS11);
+    
+    // set CTC mode
+    TCCR1B |= _BV(WGM12);
+
+    // trigger output compare match once in 250 compare match interrupts
+    // with the above prescaler we get an interrup frequency of 16000000 / 8 / 250 = 8000 Hz
+    OCR1A = 249;
 
     // initialize Timer2 for controlling left stepper motor
     TCCR2A = 0;    // set entire TCCR2A register to 0
@@ -85,7 +91,7 @@ void setup_timers()
 }
 
 // overflow interrupt for timer 1 (main loop timer)
-ISR(TIMER1_OVF_vect)
+ISR(TIMER1_COMPA_vect)
 {
     // count until loop counter reaches the desired value to trigger the main loop
     loop_counter = (loop_counter >= (LOOP_COUNTER_DIVISOR - 1)) ? 0 : loop_counter + 1;
@@ -146,8 +152,6 @@ void read_inputs()
     serial_comm_read();
 }
 
-int32_t ctr = 0;
-
 void loop()
 {
     // 200Hz loop rate
@@ -160,8 +164,6 @@ void loop()
 
         // control balance
         balance_control();
-
-        ctr++;
     }
     else if (loop_counter != 0)
     {

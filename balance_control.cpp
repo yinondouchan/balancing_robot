@@ -7,6 +7,9 @@
 #include "parameters.h"
 #include "serial_comm.h"
 
+// maximum speed when laying down
+#define MAX_LAYING_DOWN_SPEED 1000
+
 // output velocity to motor from balancing algorithm
 float balance_point_power;
 
@@ -207,6 +210,8 @@ void balance_control_state_laying_down()
     {
         // filter angular velocity control to avoid those annoying discrete level sounds
         serial_comm_desired_vel_diff_lpf = 0.1 * serial_comm_desired_vel_diff + 0.9 * serial_comm_desired_vel_diff_lpf;
+
+        serial_comm_desired_vel = constrain(serial_comm_desired_vel, -MAX_LAYING_DOWN_SPEED, MAX_LAYING_DOWN_SPEED);
 
         // control motors directly if you want to find a different direction to get up to
         if ((serial_comm_desired_vel_diff != 0) || (serial_comm_desired_vel != 0)) {
