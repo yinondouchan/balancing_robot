@@ -17,17 +17,11 @@ extern "C"
 #include "encoders.h"
 #include "parameters.h"
 
-// how many timer interrups to count until main loop is triggered
-#define LOOP_COUNTER_DIVISOR 40
-
 // the IMU
 MPU_9250 imu;
 
-// timer for main loop
-volatile int32_t loop_counter;
-
-// true if main loop was already triggered for an iteration
-bool main_loop_triggered;
+// set by loop timer to true when the loop timer interrupts, set by main loop to false when main loop executes
+volatile bool loop_trigger;
 
 // setup the robot's timers
 // timer 0 is used for controlling right stepper motor
@@ -69,7 +63,7 @@ void setup_timers()
 
     // trigger output compare match once in 250 compare match interrupts
     // with the above prescaler we get an interrup frequency of 16000000 / 8 / 250 = 8000 Hz
-    OCR1A = 249;
+    OCR1A = 10000 - 1;
 
     // initialize Timer2 for controlling left stepper motor
     TCCR2A = 0;    // set entire TCCR2A register to 0
@@ -94,7 +88,7 @@ void setup_timers()
 ISR(TIMER1_COMPA_vect)
 {
     // count until loop counter reaches the desired value to trigger the main loop
-    loop_counter = (loop_counter >= (LOOP_COUNTER_DIVISOR - 1)) ? 0 : loop_counter + 1;
+    loop_trigger = true;
 }
 
 // setup
@@ -119,7 +113,7 @@ void setup()
     serial_comm_set_param_callback(parameters_set_parameter);
     serial_comm_set_estop_callback(balance_control_on_estop);
 
-    loop_counter = 0;
+    loop_trigger = false;
 
     // initialize motor control
     motor_control_init();
@@ -129,9 +123,6 @@ void setup()
 
     // initialize balancing control
     balance_control_init();
-
-    // prevents main loop being triggered twice per timer interrupt
-    main_loop_triggered = false;
 }
 
 void read_inputs()
@@ -155,18 +146,14 @@ void read_inputs()
 void loop()
 {
     // 200Hz loop rate
-    if (!main_loop_triggered && (loop_counter == 0))
+    if (loop_trigger)
     {
-        main_loop_triggered = true;
+        loop_trigger = false;
 
         // read all inputs
         read_inputs();
 
         // control balance
         balance_control();
-    }
-    else if (loop_counter != 0)
-    {
-        main_loop_triggered = false;
     }
 }
