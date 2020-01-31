@@ -1,6 +1,8 @@
 # balancing_robot
 A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
+![my fabulous robot](https://github.com/yinondouchan/balancing_robot/blob/master/images/robot1.jpg)
+
 ## Body
 
 The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed.
