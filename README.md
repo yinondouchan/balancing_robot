@@ -5,7 +5,7 @@ A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
 ## Body
 
-The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed.
+The body is made of multiple 3d printed components, held together mostly by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed.
 
 ### Components
 
