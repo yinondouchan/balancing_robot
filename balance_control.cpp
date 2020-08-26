@@ -121,11 +121,11 @@ void balance_control_keep_upright(int32_t desired_vel, int32_t desired_turn_rate
         vel_error = desired_vel - (motor_control_right_motor_vel + motor_control_left_motor_vel)/2;
     }
 
-    if (desired_vel == 0)
-    {
-        // only change I component when in stop in order to compensate for balance angle error
+//    if (desired_vel == 0)
+//    {
+//        // only change I component when in stop in order to compensate for balance angle error
         bp_i += parameters.vel_pid_i * vel_error * dt_micros;
-    }
+//    }
 
     // apply low pass filter on velocity error
     vel_error_lpf = parameters.vel_lpf_tc / (parameters.vel_lpf_tc + dt_micros) * vel_error_lpf + dt_micros / (parameters.vel_lpf_tc + dt_micros) * vel_error;
@@ -210,6 +210,8 @@ void balance_control_state_laying_down()
 
         // control motors directly if you want to find a different direction to get up to
         if ((serial_comm_desired_vel_diff != 0) || (serial_comm_desired_vel != 0)) {
+            motor_control_enable_motors();
+            
             // control motor velocities with the obtained output and desired turn rate
 #if ENABLE_STALL_DETECTION
             motor_control_set_velocity_with_stall_detection(MC_LEFT_MOTOR, serial_comm_desired_vel + serial_comm_desired_vel_diff_lpf, MC_STEP_MODE_AUTO);
@@ -237,13 +239,23 @@ void balance_control_state_laying_down_on_estop()
 // robot is getting upright
 void balance_control_state_get_upright()
 {   
+    // enable motors
+    motor_control_enable_motors();
+  
     // constrain acceleration and deceleration
     balance_control_calculate_constrained_control_velocity();
 
-    // tune PID to better fit to getting upright
+#if MOTOR_DRIVER == MOTOR_DRIVER_TB67S249
+    // temporarily tune PID to better fit to getting upright
     parameters.vel_pid_p = 0.012;
     parameters.vel_pid_i = 0;
     parameters.vel_pid_d = 25000;
+#else
+    // temporarily tune PID to better fit to getting upright
+    parameters.vel_pid_p = 0.012;
+    parameters.vel_pid_i = 0;
+    parameters.vel_pid_d = 25000;
+#endif
 
     // filter angular velocity control to avoid those annoying discrete level sounds
     serial_comm_desired_vel_diff_lpf = 0.1 * serial_comm_desired_vel_diff + 0.9 * serial_comm_desired_vel_diff_lpf;
@@ -270,6 +282,8 @@ void balance_control_state_lay_down()
     bool layed_down = (imu_cf_angle_x <= ((int32_t)BALANCE_ANGLE - 20)) || (imu_cf_angle_x >= ((int32_t)BALANCE_ANGLE + 20));
     if (layed_down)
     {
+        balance_control_lay_down();
+      
         // if already layed down - change state to laying down
         balance_control_set_state(LAYING_DOWN);
     }

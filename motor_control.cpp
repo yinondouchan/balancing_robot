@@ -25,6 +25,9 @@ float motor_control_right_motor_vel;
 // true if one of the robot's motors are stalled
 bool motor_control_on_stall;
 
+// true of motors are enabled
+bool motor_control_motors_enabled;
+
 // how many consecutive rocks left/right motor is stalling
 uint16_t left_motor_stall_count;
 uint16_t right_motor_stall_count;
@@ -65,11 +68,13 @@ void motor_control_init()
     pinMode(MC_LEFT_MOTOR_STEP_PIN, OUTPUT);
     pinMode(MC_LEFT_MOTOR_DIR_PIN, OUTPUT);
     pinMode(MC_LEFT_MOTOR_MS2_PIN, OUTPUT);
+    pinMode(MC_LEFT_MOTOR_NENABLE_PIN, OUTPUT);
 
     // set up STEP and DIR pins for right motor
     pinMode(MC_RIGHT_MOTOR_STEP_PIN, OUTPUT);
     pinMode(MC_RIGHT_MOTOR_DIR_PIN, OUTPUT);
     pinMode(MC_RIGHT_MOTOR_MS2_PIN, OUTPUT);
+    pinMode(MC_RIGHT_MOTOR_NENABLE_PIN, OUTPUT);
   
     // set up left motor
     left_motor_nticks = 0;
@@ -99,9 +104,17 @@ void motor_control_set_step_rate(int8_t motor, float velocity)
     if (velocity == 0)
     {
         // if on standstill set timer so it will run on lowest interrupt rate
-        if (motor == MC_LEFT_MOTOR) OCR2A = 255;
-        else OCR0A = 255;
-        left_motor_nticks = 1;
+        if (motor == MC_LEFT_MOTOR)
+        {
+            OCR2A = 255;
+            left_motor_nticks = 1;
+        }
+        else // motor == MC_RIGHT_MOTOR
+        {
+            OCR0A = 255;
+            right_motor_nticks = 1;
+        }
+        
         return;
     }
     
@@ -247,7 +260,7 @@ void motor_control_set_velocity(uint8_t motor, float velocity, uint8_t step_mode
 
     // determine step mode
     if (step_mode == MC_STEP_MODE_AUTO) step_mode = motor_control_get_auto_step_mode(velocity);
-    
+#if MOTOR_DRIVER == MOTOR_DRIVER_TB67S249
     // write stepping mode for left motor
     if (step_mode == MC_STEP_MODE_FULL)
     {
@@ -285,7 +298,45 @@ void motor_control_set_velocity(uint8_t motor, float velocity, uint8_t step_mode
         digitalWrite(ms2_pin, HIGH);
         digitalWrite(ms3_pin, HIGH);
     }
-
+#elif MOTOR_DRIVER == MOTOR_DRIVER_DRV8825
+    // write stepping mode for left motor
+    if (step_mode == MC_STEP_MODE_FULL)
+    {
+        digitalWrite(ms1_pin, LOW);
+        digitalWrite(ms2_pin, LOW);
+        digitalWrite(ms3_pin, LOW);
+    }
+    else if (step_mode == MC_STEP_MODE_HALF)
+    {
+        digitalWrite(ms1_pin, HIGH);
+        digitalWrite(ms2_pin, LOW);
+        digitalWrite(ms3_pin, LOW);
+    }
+    else if (step_mode == MC_STEP_MODE_QUARTER)
+    {
+        digitalWrite(ms1_pin, LOW);
+        digitalWrite(ms2_pin, HIGH);
+        digitalWrite(ms3_pin, LOW);
+    }
+    else if (step_mode == MC_STEP_MODE_EIGHTH)
+    {
+        digitalWrite(ms1_pin, HIGH);
+        digitalWrite(ms2_pin, HIGH);
+        digitalWrite(ms3_pin, LOW);
+    }
+    else if (step_mode == MC_STEP_MODE_SIXTEENTH)
+    {
+        digitalWrite(ms1_pin, LOW);
+        digitalWrite(ms2_pin, LOW);
+        digitalWrite(ms3_pin, HIGH);
+    }
+    else if (step_mode == MC_STEP_MODE_THIRTY_TWOTH)
+    {
+        digitalWrite(ms1_pin, HIGH);
+        digitalWrite(ms2_pin, LOW);
+        digitalWrite(ms3_pin, HIGH);
+    }
+#endif
     // control step rate of left motor (microsteps per second)
     motor_control_set_step_rate(motor, velocity * step_mode);
 }
@@ -314,13 +365,31 @@ void motor_control_reset()
 // distable the motors
 void motor_control_disable_motors()
 {
+    motor_control_reset();
+    motor_control_set_step_rate(MC_LEFT_MOTOR, 0);
+    motor_control_set_step_rate(MC_RIGHT_MOTOR, 0);
+  
     // causes the motors to coast rather than brake
-    digitalWrite(MC_LEFT_MOTOR_MS1_PIN, LOW);
+    /*digitalWrite(MC_LEFT_MOTOR_MS1_PIN, LOW);
     digitalWrite(MC_LEFT_MOTOR_MS2_PIN, LOW);
     digitalWrite(MC_LEFT_MOTOR_MS3_PIN, LOW);
     digitalWrite(MC_RIGHT_MOTOR_MS1_PIN, LOW);
     digitalWrite(MC_RIGHT_MOTOR_MS2_PIN, LOW);
-    digitalWrite(MC_RIGHT_MOTOR_MS3_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_MS3_PIN, LOW);*/
+    digitalWrite(MC_LEFT_MOTOR_NENABLE_PIN, HIGH);
+    digitalWrite(MC_RIGHT_MOTOR_NENABLE_PIN, HIGH);
+    motor_control_motors_enabled = false;
+}
+
+// distable the motors
+void motor_control_enable_motors()
+{
+    // nothing to do if motors are already enabled
+    if (motor_control_motors_enabled) return;
+    
+    digitalWrite(MC_LEFT_MOTOR_NENABLE_PIN, LOW);
+    digitalWrite(MC_RIGHT_MOTOR_NENABLE_PIN, LOW);
+    motor_control_motors_enabled = true;
 }
 
 // control velocity with a stall detection layer built upon it

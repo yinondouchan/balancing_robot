@@ -5,9 +5,10 @@
 #define MOTOR_DRIVER_A4988 0
 #define MOTOR_DRIVER_MP6500 1
 #define MOTOR_DRIVER_TB67S249 2
+#define MOTOR_DRIVER_DRV8825 3
 
 // currently used stepper motor driver
-#define MOTOR_DRIVER MOTOR_DRIVER_TB67S249
+#define MOTOR_DRIVER MOTOR_DRIVER_DRV8825
 
 // main loop time interval in microseconds
 #define DT_MICROS 5000

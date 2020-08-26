@@ -1,6 +1,10 @@
 #ifndef MOTOR_CONTROL_H
 #define MOTOR_CONTROL_H
 
+// enable pins
+#define MC_LEFT_MOTOR_NENABLE_PIN A2
+#define MC_RIGHT_MOTOR_NENABLE_PIN A3
+
 // left motor step and direction pins
 #define MC_RIGHT_MOTOR_STEP_PIN 4
 #define MC_RIGHT_MOTOR_DIR_PIN 2
@@ -57,6 +61,8 @@ extern float motor_control_right_motor_vel;
 
 extern bool motor_control_on_stall;
 
+extern bool motor_control_motors_enabled;
+
 // initialize motor control module
 void motor_control_init();
 
@@ -77,6 +83,9 @@ void motor_control_reset();
 
 // distable the motors
 void motor_control_disable_motors();
+
+// enable the motors
+void motor_control_enable_motors();
 
 // control velocity with a stall detection layer built upon it
 void motor_control_set_velocity_with_stall_detection(int8_t motor, float velocity, uint8_t step_mode);

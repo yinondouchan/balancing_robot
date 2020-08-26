@@ -61,8 +61,8 @@ void setup_timers()
     // set CTC mode
     TCCR1B |= _BV(WGM12);
 
-    // trigger output compare match once in 250 compare match interrupts
-    // with the above prescaler we get an interrup frequency of 16000000 / 8 / 250 = 8000 Hz
+    // trigger output compare match once in 10000 counter increments
+    // with the above prescaler we get an output compare match interrupt frequency of 16000000 / 8 / 10000 = 200 Hz
     OCR1A = 10000 - 1;
 
     // initialize Timer2 for controlling left stepper motor
