@@ -1,9 +1,11 @@
 # balancing_robot
 A balancing robot trying to become sentient using a Jetson Nano and an Arduino
 
+![my fabulous robot](https://github.com/yinondouchan/balancing_robot/blob/master/images/robot1.jpg)
+
 ## Body
 
-The body is made of multiple 3d printed components and held together by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed.
+The body is made of multiple 3d printed components, held together mostly by nuts and bolts. The components were designed in FreeCAD, converted to STL mesh files, sliced to gcode files and printed.
 
 ### Components
 
@@ -116,10 +118,4 @@ Given those inputs, the low level controller controls the velocities of the two 
 
 ### High level controller (Jetson Nano)
 
-Currently, the high level controller is a mix of experimental and proof-of-concept level software pieces. Yes, it sounds bad, but I will eventually organize it to something more coherent. The currently implemented software pieces are:
-
-* Camera streaming - streams the video from the CSI camera to a webpage
-* Follow me - detects and tracks an Aruco marker and makes the robot follow this marker by using the low level controller.
-* trt-yolo-video - A TensorRT implementation of the YOLO detector (either V2 or V3, tiny and not tiny, can be selected in configuration) which takes the CSI camera's video as input and optionally outputs the video alongside with the detected objects to a webpage
-* trt-goturn - A TensorRT accelerated GOTURN tracker. Almost works, but not yet!
-
+The high level controller also contains a GPU and is therefore capable of running even deep learning algorithms. For the implemented software refer to https://github.com/yinondouchan/balancing_robot_sw
